@@ -14,7 +14,7 @@ export default function Dashboard() {
     if (isMining && timeLeft > 0) {
       timer = setInterval(() => {
         setTimeLeft((prev) => prev - 1);
-        setBalance((prev) => prev + baseRate / 3600); // Live real-time accumulation
+        setBalance((prev) => prev + baseRate / 3600);
       }, 1000);
     } else if (timeLeft === 0 && isMining) {
       setIsMining(false);
