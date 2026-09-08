@@ -6,9 +6,8 @@ export default function Dashboard() {
   const [balance, setBalance] = useState<number>(1250.50);
   const [isMining, setIsMining] = useState<boolean>(false);
   const [timeLeft, setTimeLeft] = useState<number>(0);
-  const baseRate = 10; // 10 Z-Points/hour
+  const baseRate = 10;
 
-  // 24-Hour Timer Engine
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (isMining && timeLeft > 0) {
@@ -22,13 +21,11 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, [isMining, timeLeft]);
 
-  // Handle Claim Button Click
   const handleStartClaim = () => {
     setIsMining(true);
-    setTimeLeft(24 * 3600); // 24 Hours in seconds
+    setTimeLeft(24 * 3600);
   };
 
-  // Format Seconds to HH:MM:SS
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
     const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
@@ -37,39 +34,34 @@ export default function Dashboard() {
   };
 
   return (
-    <main style={{ backgroundColor: '#020617', color: 'white', minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      {/* Top Navbar */}
-      <header style={{ width: '100%', maxWidth: '400px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '15px', borderBottom: '1px solid #1e293b' }}>
-        <div style={{ fontWeight: 'bold', fontSize: '20px', color: '#facc15' }}>⚡ ZEPTO</div>
-        <div style={{ backgroundColor: '#0f172a', border: '1px solid #10b981', color: '#34d399', fontSize: '12px', padding: '4px 10px', borderRadius: '20px' }}>
+    <main className="min-h-screen bg-slate-950 text-white p-5 flex flex-col items-center font-sans">
+      <header className="w-full max-w-sm flex justify-between items-center pb-4 border-b border-slate-800">
+        <div className="font-bold text-xl text-yellow-400">⚡ ZEPTO</div>
+        <div className="bg-slate-900 border border-emerald-500 text-emerald-400 text-xs px-3 py-1 rounded-full">
           🛡️ Fingerprint Active
         </div>
       </header>
 
-      {/* Main Dashboard Card */}
-      <div style={{ width: '100%', maxWidth: '400px', marginTop: '20px', backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '24px', padding: '24px', textAlign: 'center' }}>
-        <span style={{ color: '#94a3b8', fontSize: '14px' }}>Total Balance</span>
-        <div style={{ fontSize: '36px', fontWeight: '800', color: '#f59e0b', margin: '10px 0' }}>
-          {balance.toFixed(2)} <span style={{ fontSize: '18px', color: 'white' }}>Z-Points</span>
+      <div className="w-full max-w-sm mt-5 bg-slate-900 border border-slate-800 rounded-3xl p-6 text-center">
+        <span className="text-slate-400 text-sm">Total Balance</span>
+        <div className="text-4xl font-extrabold text-amber-500 my-2">
+          {balance.toFixed(2)} <span className="text-lg text-white">Z-Points</span>
         </div>
 
-        <div style={{ fontSize: '12px', color: '#94a3b8', backgroundColor: '#1e293b', padding: '6px 12px', borderRadius: '8px', display: 'inline-block', marginBottom: '15px' }}>
+        <div className="text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-lg inline-block mb-4">
           🔥 Mining Speed: <strong>+10.0 Z-Points/h</strong>
         </div>
 
-        {/* Claim Action Area */}
-        <div style={{ width: '100%', marginTop: '15px' }}>
+        <div className="w-full mt-3">
           {isMining ? (
-            <div style={{ backgroundColor: '#020617', border: '1px solid #f59e0b', padding: '15px', borderRadius: '16px' }}>
-              <span style={{ fontSize: '12px', color: '#f59e0b', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>SESSION ACTIVE</span>
-              <span style={{ fontSize: '24px', fontFamily: 'monospace', fontWeight: 'bold' }}>
-                {formatTime(timeLeft)}
-              </span>
+            <div className="bg-slate-950 border border-amber-500 p-4 rounded-2xl">
+              <span className="text-xs text-amber-500 font-bold block mb-1">SESSION ACTIVE</span>
+              <span className="text-2xl font-mono font-bold">{formatTime(timeLeft)}</span>
             </div>
           ) : (
             <button
               onClick={handleStartClaim}
-              style={{ width: '100%', padding: '16px', backgroundColor: '#f59e0b', color: '#020617', fontWeight: 'bold', fontSize: '18px', border: 'none', borderRadius: '16px', cursor: 'pointer' }}
+              className="w-full py-4 bg-amber-500 text-slate-950 font-bold text-lg rounded-2xl cursor-pointer hover:bg-amber-400 transition-colors"
             >
               Claim Z-Points (24h)
             </button>
@@ -77,18 +69,17 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Quick Stats Grid */}
-      <div style={{ width: '100%', maxWidth: '400px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '15px' }}>
-        <div style={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', padding: '15px', borderRadius: '16px' }}>
-          <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block' }}>👥 Referrals</span>
-          <span style={{ fontSize: '18px', fontWeight: 'bold' }}>12 Active</span>
-          <span style={{ fontSize: '10px', color: '#34d399', display: 'block', marginTop: '2px' }}>+7% Lifetime Share</span>
+      <div className="w-full max-w-sm grid grid-cols-2 gap-3 mt-4">
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+          <span className="text-xs text-slate-400 block">👥 Referrals</span>
+          <span className="text-lg font-bold">12 Active</span>
+          <span className="text-[10px] text-emerald-400 block mt-1">+7% Lifetime Share</span>
         </div>
 
-        <div style={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', padding: '15px', borderRadius: '16px' }}>
-          <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block' }}>🏆 Daily Streak</span>
-          <span style={{ fontSize: '18px', fontWeight: 'bold' }}>Day 5/7</span>
-          <span style={{ fontSize: '10px', color: '#c084fc', display: 'block', marginTop: '2px' }}>+35% Bonus Active</span>
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+          <span className="text-xs text-slate-400 block">🏆 Daily Streak</span>
+          <span className="text-lg font-bold">Day 5/7</span>
+          <span className="text-[10px] text-purple-400 block mt-1">+35% Bonus Active</span>
         </div>
       </div>
     </main>
