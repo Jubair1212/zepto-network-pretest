@@ -6,6 +6,7 @@ export default function Dashboard() {
   const [balance, setBalance] = useState<number>(1250.50);
   const [isMining, setIsMining] = useState<boolean>(false);
   const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const baseRate = 10;
 
   useEffect(() => {
@@ -26,6 +27,22 @@ export default function Dashboard() {
     setTimeLeft(24 * 3600);
   };
 
+  // Connect Wallet Action (Mock/Web3 Ready)
+  const handleConnectWallet = async () => {
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
+      try {
+        const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+        if (accounts.length > 0) {
+          setWalletAddress(`${accounts[0].substring(0, 6)}...${accounts[0].substring(accounts[0].length - 4)}`);
+        }
+      } catch (err) {
+        alert("Wallet connection failed!");
+      }
+    } else {
+      alert("Please install MetaMask or Web3 Wallet!");
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
     const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
@@ -35,14 +52,28 @@ export default function Dashboard() {
 
   return (
     <main style={{ minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      {/* Container - Responsive width for PC & Mobile */}
       <div style={{ width: '100%', maxWidth: '800px' }}>
         
-        {/* Top Navbar */}
+        {/* Top Navbar with Connect Wallet Button */}
         <header style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '15px', borderBottom: '1px solid #1e293b' }}>
           <div style={{ fontWeight: 'bold', fontSize: '24px', color: '#facc15' }}>⚡ ZEPTO</div>
-          <div style={{ backgroundColor: '#0f172a', border: '1px solid #10b981', color: '#34d399', fontSize: '13px', padding: '6px 14px', borderRadius: '20px' }}>
-            🛡️ Fingerprint Active
+          
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button
+              onClick={handleConnectWallet}
+              style={{
+                backgroundColor: walletAddress ? '#1e293b' : '#3b82f6',
+                color: '#ffffff',
+                border: walletAddress ? '1px solid #3b82f6' : 'none',
+                padding: '8px 14px',
+                borderRadius: '12px',
+                fontWeight: 'bold',
+                fontSize: '13px',
+                cursor: 'pointer'
+              }}
+            >
+              {walletAddress ? `👛 ${walletAddress}` : '🔗 Connect Wallet'}
+            </button>
           </div>
         </header>
 
@@ -57,7 +88,6 @@ export default function Dashboard() {
             🔥 Mining Speed: <strong>+10.0 Z-Points/h</strong>
           </div>
 
-          {/* Claim Action Area */}
           <div style={{ width: '100%' }}>
             {isMining ? (
               <div style={{ backgroundColor: '#020617', border: '1px solid #f59e0b', padding: '20px', borderRadius: '16px' }}>
