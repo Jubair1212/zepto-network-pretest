@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 
 const BASE_RATE = 10; // Z-Points per hour
 const SESSION_SECONDS = 24 * 3600;
@@ -31,17 +31,6 @@ const TRANSACTIONS = [
   { label: "Streak bonus", amt: "+84.0", time: "3d ago" },
 ];
 
-/* ---------------------------------- utils --------------------------------- */
-
-function loadState() {
-  if (typeof window === "undefined") return null;
-  try {
-    return JSON.parse(localStorage.getItem("zepto_state") ?? "null");
-  } catch {
-    return null;
-  }
-}
-
 function formatTime(s: number) {
   const h = Math.floor(s / 3600).toString().padStart(2, "0");
   const m = Math.floor((s % 3600) / 60).toString().padStart(2, "0");
@@ -49,12 +38,9 @@ function formatTime(s: number) {
   return `${h}:${m}:${sec}`;
 }
 
-/* --------------------------------- colors --------------------------------- */
-
 const C = {
   bg: "#07080d",
   panel: "rgba(255,255,255,0.03)",
-  panelHover: "rgba(255,255,255,0.05)",
   border: "rgba(255,255,255,0.07)",
   text: "#f4f4f5",
   text2: "#a1a1aa",
@@ -77,7 +63,6 @@ const S = {
     padding: "24px 20px 40px",
   } as React.CSSProperties,
   wrap: { width: "100%", maxWidth: 860, margin: "0 auto" } as React.CSSProperties,
-
   nav: {
     display: "flex", justifyContent: "space-between", alignItems: "center",
     paddingBottom: 20, borderBottom: `1px solid ${C.border}`,
@@ -91,7 +76,6 @@ const S = {
     padding: "9px 16px", borderRadius: 999, fontWeight: 600, fontSize: 13,
     cursor: "pointer", fontVariantNumeric: "tabular-nums",
   }),
-
   hero: {
     marginTop: 24, background: C.panel, border: `1px solid ${C.border}`,
     borderRadius: 20, padding: "32px 28px",
@@ -100,7 +84,6 @@ const S = {
   label: { fontSize: 13, color: C.text2, fontWeight: 500 } as React.CSSProperties,
   balance: { fontSize: 46, fontWeight: 800, margin: "8px 0 4px", fontVariantNumeric: "tabular-nums" } as React.CSSProperties,
   balanceUnit: { fontSize: 18, fontWeight: 600, color: C.text2 } as React.CSSProperties,
-
   chip: (color: string, soft: string): React.CSSProperties => ({
     display: "inline-flex", alignItems: "center", gap: 6,
     fontSize: 12, fontWeight: 600, color, background: soft,
@@ -114,19 +97,12 @@ const S = {
     border: `1px solid ${disabled ? C.border : "transparent"}`,
     borderRadius: 14, cursor: disabled ? "default" : "pointer",
   }),
-  ghostBtn: {
-    width: "100%", padding: "14px", background: C.panel, color: C.text,
-    fontWeight: 600, fontSize: 14, border: `1px solid ${C.border}`,
-    borderRadius: 14, cursor: "pointer",
-  } as React.CSSProperties,
-
   ringWrap: { position: "relative", width: 172, height: 172 } as React.CSSProperties,
   ringCenter: {
     position: "absolute", inset: 0, display: "flex", flexDirection: "column",
     alignItems: "center", justifyContent: "center", gap: 4,
   } as React.CSSProperties,
   ringTime: { fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" } as React.CSSProperties,
-
   stats: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginTop: 16 } as React.CSSProperties,
   statCard: {
     background: C.panel, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20,
@@ -142,7 +118,6 @@ const S = {
     flex: 1, height: 6, borderRadius: 3,
     background: filled ? C.purple : "rgba(255,255,255,0.08)",
   }),
-
   card: {
     background: C.panel, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20,
   } as React.CSSProperties,
@@ -154,7 +129,6 @@ const S = {
   } as React.CSSProperties,
   rowAddr: { fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums" } as React.CSSProperties,
   rowMeta: { fontSize: 12, color: C.text3 } as React.CSSProperties,
-
   bottomNav: {
     position: "sticky", bottom: 12, marginTop: 24,
     display: "flex", justifyContent: "space-around",
@@ -164,8 +138,6 @@ const S = {
   } as React.CSSProperties,
 };
 
-/* ------------------------------- ring chart ------------------------------- */
-
 function Ring({ progress, active, size = 172 }: { progress: number; active: boolean; size?: number }) {
   const R = 76, STROKE = 8, CIRC = 2 * Math.PI * R;
   return (
@@ -174,14 +146,12 @@ function Ring({ progress, active, size = 172 }: { progress: number; active: bool
       <circle
         cx="86" cy="86" r={R} fill="none"
         stroke={active ? C.amber : C.text3} strokeWidth={STROKE} strokeLinecap="round"
-        strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - progress)}
+        strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - Math.min(1, Math.max(0, progress)))}
         style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s" }}
       />
     </svg>
   );
 }
-
-/* ---------------------------------- icons --------------------------------- */
 
 const I = ({ d, color, size = 17 }: { d: string; color: string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -203,8 +173,6 @@ const ICONS = {
   up: "M7 17 17 7M7 7h10v10",
 };
 
-/* --------------------------------- component ------------------------------ */
-
 type Tab = "home" | "mine" | "referrals" | "wallet";
 
 export default function Dashboard() {
@@ -214,44 +182,62 @@ export default function Dashboard() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [wallet, setWallet] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const stateRef = useRef({ balance: 1250.5, endAt: 0 });
+  const [mounted, setMounted] = useState(false);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2600);
-  };
+  }, []);
 
-  /* restore session from localStorage (survives refresh) */
+  /* Hydration & Saved State Restoring */
   useEffect(() => {
-    const saved = loadState();
-    if (!saved) return;
-    const now = Date.now();
-    if (saved.endAt && saved.endAt > now) {
-      const elapsed = (now - (saved.endAt - SESSION_SECONDS * 1000)) / 1000;
-      setBalance(saved.balance + (BASE_RATE / 3600) * elapsed);
-      setTimeLeft(Math.max(0, Math.floor((saved.endAt - now) / 1000)));
-      setIsMining(true);
-    } else {
-      setBalance(saved.balance);
+    setMounted(true);
+    try {
+      const savedWallet = localStorage.getItem("zepto_wallet");
+      if (savedWallet) setWallet(savedWallet);
+
+      const savedState = localStorage.getItem("zepto_state");
+      if (savedState) {
+        const { balance: savedBal, endAt } = JSON.parse(savedState);
+        const now = Date.now();
+
+        if (endAt && endAt > now) {
+          const remainingSeconds = Math.floor((endAt - now) / 1000);
+          const elapsedSeconds = SESSION_SECONDS - remainingSeconds;
+          setBalance(savedBal + (BASE_RATE / 3600) * elapsedSeconds);
+          setTimeLeft(remainingSeconds);
+          setIsMining(true);
+        } else if (endAt && endAt <= now) {
+          setBalance(savedBal + (BASE_RATE / 3600) * SESSION_SECONDS);
+          setIsMining(false);
+          setTimeLeft(0);
+        } else {
+          setBalance(savedBal);
+        }
+      }
+    } catch {
+      // Ignore localStorage errors
     }
   }, []);
 
-  /* persist */
+  /* Persist State */
   useEffect(() => {
-    stateRef.current.balance = balance;
-  }, [balance]);
-  useEffect(() => {
-    stateRef.current.endAt = isMining ? Date.now() + timeLeft * 1000 : 0;
+    if (!mounted) return;
+    const endAt = isMining ? Date.now() + timeLeft * 1000 : 0;
+    const baseBalance = isMining
+      ? balance - ((SESSION_SECONDS - timeLeft) * BASE_RATE) / 3600
+      : balance;
+
     localStorage.setItem(
       "zepto_state",
-      JSON.stringify({ balance: stateRef.current.balance, endAt: stateRef.current.endAt }),
+      JSON.stringify({ balance: baseBalance, endAt })
     );
-  }, [balance, isMining, timeLeft]);
+  }, [isMining, timeLeft, balance, mounted]);
 
-  /* single stable interval while mining */
+  /* Mining Timer Interval */
   useEffect(() => {
     if (!isMining) return;
-    const t = setInterval(() => {
+    const interval = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           setIsMining(false);
@@ -262,14 +248,15 @@ export default function Dashboard() {
       });
       setBalance((b) => b + BASE_RATE / 3600);
     }, 1000);
-    return () => clearInterval(t);
-  }, [isMining]);
+
+    return () => clearInterval(interval);
+  }, [isMining, showToast]);
 
   const startSession = useCallback(() => {
     setIsMining(true);
     setTimeLeft(SESSION_SECONDS);
     showToast("Mining session started — 24h");
-  }, []);
+  }, [showToast]);
 
   const connectWallet = useCallback(async () => {
     if (typeof window !== "undefined" && (window as any).ethereum) {
@@ -277,7 +264,9 @@ export default function Dashboard() {
         const accounts = await (window as any).ethereum.request({ method: "eth_requestAccounts" });
         if (accounts.length > 0) {
           const a = accounts[0] as string;
-          setWallet(`${a.slice(0, 6)}…${a.slice(-4)}`);
+          const formatted = `${a.slice(0, 6)}…${a.slice(-4)}`;
+          setWallet(formatted);
+          localStorage.setItem("zepto_wallet", formatted);
           showToast("Wallet connected");
         }
       } catch {
@@ -286,12 +275,16 @@ export default function Dashboard() {
     } else {
       showToast("MetaMask not detected — install a Web3 wallet");
     }
-  }, []);
+  }, [showToast]);
 
   const copyRef = () => {
-    navigator.clipboard?.writeText("https://zepto.app/r/YOUR-CODE");
-    showToast("Referral link copied");
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText("https://zepto.app/r/YOUR-CODE");
+      showToast("Referral link copied");
+    }
   };
+
+  if (!mounted) return null;
 
   const progress = isMining ? 1 - timeLeft / SESSION_SECONDS : 0;
   const sessionEarned = isMining ? ((SESSION_SECONDS - timeLeft) * BASE_RATE) / 3600 : 0;
@@ -306,7 +299,6 @@ export default function Dashboard() {
   return (
     <main style={S.page}>
       <div style={S.wrap}>
-        {/* ------------------------------ top nav ------------------------------ */}
         <header style={S.nav}>
           <div style={S.brand}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill={C.amber}>
@@ -320,12 +312,11 @@ export default function Dashboard() {
           </button>
         </header>
 
-        {/* ================================ HOME ================================ */}
         {tab === "home" && (
           <div className="zpage">
             <section className="zhero" style={S.hero}>
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "inherit" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <span style={S.label}>Total balance</span>
                   {isMining && (
                     <span style={S.chip(C.green, C.greenSoft)}>
@@ -337,7 +328,7 @@ export default function Dashboard() {
                 <div style={S.balance}>
                   {balance.toFixed(isMining ? 4 : 2)} <span style={S.balanceUnit}>Z-Points</span>
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "inherit" }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <span style={S.chip(C.amber, C.amberSoft)}>
                     <I d={ICONS.gauge} color={C.amber} size={13} /> +{BASE_RATE.toFixed(1)} / hour
                   </span>
@@ -415,7 +406,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ================================ MINE ================================ */}
         {tab === "mine" && (
           <div className="zpage">
             <h2 style={S.pageTitle}>Mining</h2>
@@ -472,37 +462,9 @@ export default function Dashboard() {
                 ))}
               </div>
             </section>
-
-            <section style={{ ...S.card, marginTop: 16 }}>
-              <span style={S.label}>Boosts</span>
-              <div style={{ marginTop: 8 }}>
-                {[
-                  { icon: ICONS.flame, color: C.purple, soft: C.purpleSoft, name: "Streak boost", desc: "+35% while streak is active", state: "active" },
-                  { icon: ICONS.gift, color: C.green, soft: C.greenSoft, name: "Referral boost", desc: "+7% per active referral share", state: "soon" },
-                  { icon: ICONS.bolt, color: C.amber, soft: C.amberSoft, name: "Ad boost", desc: "Watch ads to double rate for 1h", state: "soon" },
-                ].map((b) => (
-                  <div key={b.name} style={S.row}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{ ...S.statIcon(b.soft), marginBottom: 0 }}><I d={b.icon} color={b.color} size={16} /></div>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 600 }}>{b.name}</div>
-                        <div style={S.rowMeta}>{b.desc}</div>
-                      </div>
-                    </div>
-                    <span style={{
-                      ...S.chip(b.state === "active" ? C.green : C.text3, b.state === "active" ? C.greenSoft : C.panel),
-                      fontSize: 10, padding: "3px 10px",
-                    }}>
-                      {b.state}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
           </div>
         )}
 
-        {/* ============================== REFERRALS ============================= */}
         {tab === "referrals" && (
           <div className="zpage">
             <h2 style={S.pageTitle}>Referrals</h2>
@@ -557,7 +519,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* =============================== WALLET =============================== */}
         {tab === "wallet" && (
           <div className="zpage">
             <h2 style={S.pageTitle}>Wallet</h2>
@@ -615,7 +576,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ------------------------------ bottom nav --------------------------- */}
         <nav style={S.bottomNav}>
           {NAV.map((t) => {
             const active = tab === t.id;
@@ -637,7 +597,6 @@ export default function Dashboard() {
         </nav>
       </div>
 
-      {/* -------------------------------- toast -------------------------------- */}
       {toast && (
         <div
           style={{
