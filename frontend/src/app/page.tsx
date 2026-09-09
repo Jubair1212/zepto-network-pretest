@@ -3,6 +3,11 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 
 const BASE_RATE = 10; // Z-Points per hour
+
+const WEEK = [
+  { d: "M", h: 4 }, { d: "T", h: 6 }, { d: "W", h: 5 }, { d: "T", h: 6.5 },
+  { d: "F", h: 8 }, { d: "S", h: 7 }, { d: "S", h: 9 },
+];
 const SESSION_SECONDS = 24 * 3600;
 
 /* ---------------------------------- utils --------------------------------- */
@@ -190,6 +195,7 @@ const ICONS = {
   flame: "M12 22c4 0 7-2.7 7-7 0-3-2-5.5-3.5-7C14 6.5 13 4 13 2c-3 2-5 5-5 8-1-.7-1.7-1.7-2-3-1.5 1.7-3 4-3 7 0 4.3 3 7 9 8z",
   gauge: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 3a9 9 0 0 1 9 9h-3a6 6 0 0 0-12 0H3a9 9 0 0 1 9-9zM12 21a9 9 0 0 0 9-9",
   wallet: "M20 7H4a2 2 0 0 1 0-4h14v4M4 7v12a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1M16 13h4v4h-4a2 2 0 0 1 0-4z",
+  home: "M3 10.5 12 3l9 7.5M5 9.5V21h5v-6h4v6h5V9.5",
   check: "M20 6 9 17l-5-5",
   copy: "M9 9h11v11H9zM5 15H4V4h11v1",
 };
@@ -307,7 +313,7 @@ export default function Dashboard() {
         </header>
 
         {/* ------------------------------- hero -------------------------------- */}
-        <section style={S.hero}>
+        <section className="zhero" style={S.hero}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span style={S.label}>Total balance</span>
@@ -357,7 +363,7 @@ export default function Dashboard() {
         </section>
 
         {/* ------------------------------ stats -------------------------------- */}
-        <section style={S.stats}>
+        <section className="zstats" style={S.stats}>
           <div
             style={S.statCard}
             onMouseEnter={(e) => (e.currentTarget.style.background = C.panelHover)}
@@ -415,6 +421,64 @@ export default function Dashboard() {
             <span style={{ ...S.statSub, color: C.text2 }}>base rate</span>
           </div>
         </section>
+
+        {/* ---------------------------- weekly chart --------------------------- */}
+        <section className="zcard" style={{ marginTop: 16, padding: "20px 24px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+            <span style={S.label}>Mining time this week</span>
+            <span style={{ fontSize: 12, color: C.text3 }}>hours / day</span>
+          </div>
+          <svg width="100%" height="72" viewBox="0 0 320 72" preserveAspectRatio="none">
+            {WEEK.map((d, i) => (
+              <rect
+                key={i}
+                x={8 + i * 44}
+                y={72 - d.h * 6.6}
+                width="24"
+                height={d.h * 6.6}
+                rx="3"
+                fill={i === WEEK.length - 1 ? C.amber : "rgba(245,158,11,0.3)"}
+              />
+            ))}
+          </svg>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.text3, padding: "4px 6px 0" }}>
+            {WEEK.map((d, i) => (
+              <span key={i} style={i === WEEK.length - 1 ? { color: C.amber, fontWeight: 600 } : undefined}>
+                {d.d}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        {/* ------------------------------ bottom nav --------------------------- */}
+        <nav
+          className="zbottomnav"
+          style={{
+            position: "sticky", bottom: 12, marginTop: 24,
+            display: "flex", justifyContent: "space-around",
+            background: "rgba(24,24,27,0.92)", backdropFilter: "blur(12px)",
+            border: `1px solid ${C.border}`, borderRadius: 18, padding: "10px 12px",
+          }}
+        >
+          {[
+            { icon: ICONS.home, label: "Home", active: true },
+            { icon: ICONS.gauge, label: "Mine", active: false },
+            { icon: ICONS.users, label: "Referrals", active: false },
+            { icon: ICONS.wallet, label: "Wallet", active: false },
+          ].map((t) => (
+            <button
+              key={t.label}
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                background: "none", border: "none", cursor: "pointer", padding: "4px 14px",
+                color: t.active ? C.amber : C.text3, fontSize: 11, fontWeight: t.active ? 700 : 500,
+              }}
+            >
+              <I d={t.icon} color={t.active ? C.amber : C.text3} size={19} />
+              {t.label}
+            </button>
+          ))}
+        </nav>
       </div>
 
       {/* -------------------------------- toast -------------------------------- */}
@@ -436,10 +500,9 @@ export default function Dashboard() {
       <style>{`
         @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
         button:hover { filter: brightness(1.08); }
-        button:active { transform: translateY(0); }
         @media (max-width: 700px) {
-          section[style*="grid-template-columns: 1fr auto"] { grid-template-columns: 1fr !important; justify-items: center; }
-          div[style*="repeat(3, 1fr)"] { grid-template-columns: 1fr !important; }
+          .zhero { grid-template-columns: 1fr !important; justify-items: center; text-align: center; }
+          .zstats { grid-template-columns: 1fr !important; }
         }
       `}</style>
     </main>
