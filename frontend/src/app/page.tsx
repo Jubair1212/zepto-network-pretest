@@ -3,12 +3,33 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 
 const BASE_RATE = 10; // Z-Points per hour
+const SESSION_SECONDS = 24 * 3600;
 
 const WEEK = [
   { d: "M", h: 4 }, { d: "T", h: 6 }, { d: "W", h: 5 }, { d: "T", h: 6.5 },
   { d: "F", h: 8 }, { d: "S", h: 7 }, { d: "S", h: 9 },
 ];
-const SESSION_SECONDS = 24 * 3600;
+
+const SESSION_HISTORY = [
+  { label: "Current session", earned: 8.33, status: "active" },
+  { label: "Yesterday", earned: 240.0, status: "completed" },
+  { label: "2 days ago", earned: 240.0, status: "completed" },
+  { label: "3 days ago", earned: 168.0, status: "completed" },
+];
+
+const REFERRALS = [
+  { addr: "0x8f3a…21bc", joined: "2h ago", earned: "16.8" },
+  { addr: "0x1cd9…a4f0", joined: "1d ago", earned: "33.6" },
+  { addr: "0x77be…09d3", joined: "2d ago", earned: "50.4" },
+  { addr: "0x4a20…e771", joined: "4d ago", earned: "67.2" },
+];
+
+const TRANSACTIONS = [
+  { label: "Session reward", amt: "+240.0", time: "Yesterday" },
+  { label: "Referral share", amt: "+16.8", time: "2d ago" },
+  { label: "Session reward", amt: "+240.0", time: "2d ago" },
+  { label: "Streak bonus", amt: "+84.0", time: "3d ago" },
+];
 
 /* ---------------------------------- utils --------------------------------- */
 
@@ -28,8 +49,7 @@ function formatTime(s: number) {
   return `${h}:${m}:${sec}`;
 }
 
-/* --------------------------------- styles --------------------------------- */
-/* Single style object so the whole UI stays consistent and easy to theme.   */
+/* --------------------------------- colors --------------------------------- */
 
 const C = {
   bg: "#07080d",
@@ -45,6 +65,7 @@ const C = {
   greenSoft: "rgba(52,211,153,0.12)",
   purple: "#c084fc",
   purpleSoft: "rgba(192,132,252,0.12)",
+  red: "#f87171",
 };
 
 const S = {
@@ -53,128 +74,107 @@ const S = {
     background: C.bg,
     color: C.text,
     fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif",
-    padding: "24px 20px 64px",
+    padding: "24px 20px 40px",
   } as React.CSSProperties,
   wrap: { width: "100%", maxWidth: 860, margin: "0 auto" } as React.CSSProperties,
 
   nav: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingBottom: 20,
-    borderBottom: `1px solid ${C.border}`,
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    paddingBottom: 20, borderBottom: `1px solid ${C.border}`,
   } as React.CSSProperties,
-
   brand: { display: "flex", alignItems: "center", gap: 10, fontWeight: 800, fontSize: 20, letterSpacing: 1 } as React.CSSProperties,
-
   walletBtn: (connected: boolean): React.CSSProperties => ({
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
+    display: "flex", alignItems: "center", gap: 8,
     background: connected ? C.panel : C.amber,
     color: connected ? C.text : "#0a0a0a",
     border: `1px solid ${connected ? C.border : "transparent"}`,
-    padding: "9px 16px",
-    borderRadius: 999,
-    fontWeight: 600,
-    fontSize: 13,
-    cursor: "pointer",
-    transition: "background 0.2s, transform 0.1s",
-    fontVariantNumeric: "tabular-nums",
+    padding: "9px 16px", borderRadius: 999, fontWeight: 600, fontSize: 13,
+    cursor: "pointer", fontVariantNumeric: "tabular-nums",
   }),
 
   hero: {
-    marginTop: 24,
-    background: C.panel,
-    border: `1px solid ${C.border}`,
-    borderRadius: 20,
-    padding: "32px 28px",
-    display: "grid",
-    gridTemplateColumns: "1fr auto",
-    gap: 24,
-    alignItems: "center",
+    marginTop: 24, background: C.panel, border: `1px solid ${C.border}`,
+    borderRadius: 20, padding: "32px 28px",
+    display: "grid", gridTemplateColumns: "1fr auto", gap: 24, alignItems: "center",
   } as React.CSSProperties,
-
   label: { fontSize: 13, color: C.text2, fontWeight: 500 } as React.CSSProperties,
   balance: { fontSize: 46, fontWeight: 800, margin: "8px 0 4px", fontVariantNumeric: "tabular-nums" } as React.CSSProperties,
   balanceUnit: { fontSize: 18, fontWeight: 600, color: C.text2 } as React.CSSProperties,
 
   chip: (color: string, soft: string): React.CSSProperties => ({
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    fontSize: 12,
-    fontWeight: 600,
-    color,
-    background: soft,
-    border: `1px solid ${soft}`,
-    padding: "5px 12px",
-    borderRadius: 999,
+    display: "inline-flex", alignItems: "center", gap: 6,
+    fontSize: 12, fontWeight: 600, color, background: soft,
+    border: `1px solid ${soft}`, padding: "5px 12px", borderRadius: 999,
   }),
-
   primaryBtn: (disabled: boolean): React.CSSProperties => ({
-    marginTop: 24,
-    width: "100%",
-    padding: "16px",
+    marginTop: 24, width: "100%", padding: "16px",
     background: disabled ? C.panel : C.amber,
     color: disabled ? C.text3 : "#0a0a0a",
-    fontWeight: 700,
-    fontSize: 15,
+    fontWeight: 700, fontSize: 15,
     border: `1px solid ${disabled ? C.border : "transparent"}`,
-    borderRadius: 14,
-    cursor: disabled ? "default" : "pointer",
-    transition: "background 0.2s, transform 0.1s",
+    borderRadius: 14, cursor: disabled ? "default" : "pointer",
   }),
+  ghostBtn: {
+    width: "100%", padding: "14px", background: C.panel, color: C.text,
+    fontWeight: 600, fontSize: 14, border: `1px solid ${C.border}`,
+    borderRadius: 14, cursor: "pointer",
+  } as React.CSSProperties,
 
   ringWrap: { position: "relative", width: 172, height: 172 } as React.CSSProperties,
   ringCenter: {
-    position: "absolute",
-    inset: 0,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
+    position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+    alignItems: "center", justifyContent: "center", gap: 4,
   } as React.CSSProperties,
   ringTime: { fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" } as React.CSSProperties,
-  ringLabel: { fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" as const },
 
   stats: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginTop: 16 } as React.CSSProperties,
   statCard: {
-    background: C.panel,
-    border: `1px solid ${C.border}`,
-    borderRadius: 16,
-    padding: 20,
-    transition: "background 0.2s",
+    background: C.panel, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20,
   } as React.CSSProperties,
   statIcon: (soft: string): React.CSSProperties => ({
-    width: 34, height: 34, borderRadius: 10,
-    display: "flex", alignItems: "center", justifyContent: "center",
-    background: soft, marginBottom: 12,
+    width: 34, height: 34, borderRadius: 10, display: "flex",
+    alignItems: "center", justifyContent: "center", background: soft, marginBottom: 12,
   }),
   statValue: { fontSize: 20, fontWeight: 700, margin: "2px 0 4px" } as React.CSSProperties,
   statSub: { fontSize: 12, fontWeight: 600 } as React.CSSProperties,
-
   streakRow: { display: "flex", gap: 6, marginTop: 10 } as React.CSSProperties,
   streakSeg: (filled: boolean): React.CSSProperties => ({
     flex: 1, height: 6, borderRadius: 3,
     background: filled ? C.purple : "rgba(255,255,255,0.08)",
   }),
+
+  card: {
+    background: C.panel, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20,
+  } as React.CSSProperties,
+  pageTitle: { fontSize: 22, fontWeight: 800, margin: "24px 0 4px" } as React.CSSProperties,
+  pageSub: { fontSize: 13, color: C.text2, marginBottom: 16 } as React.CSSProperties,
+  row: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: "12px 0", borderBottom: `1px solid ${C.border}`,
+  } as React.CSSProperties,
+  rowAddr: { fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums" } as React.CSSProperties,
+  rowMeta: { fontSize: 12, color: C.text3 } as React.CSSProperties,
+
+  bottomNav: {
+    position: "sticky", bottom: 12, marginTop: 24,
+    display: "flex", justifyContent: "space-around",
+    background: "rgba(24,24,27,0.92)", backdropFilter: "blur(12px)",
+    border: `1px solid ${C.border}`, borderRadius: 18, padding: "10px 12px",
+    zIndex: 20,
+  } as React.CSSProperties,
 };
 
 /* ------------------------------- ring chart ------------------------------- */
 
-function Ring({ progress, active }: { progress: number; active: boolean }) {
+function Ring({ progress, active, size = 172 }: { progress: number; active: boolean; size?: number }) {
   const R = 76, STROKE = 8, CIRC = 2 * Math.PI * R;
-  const color = active ? C.amber : C.text3;
   return (
-    <svg width="172" height="172" viewBox="0 0 172 172" style={{ transform: "rotate(-90deg)" }}>
+    <svg width={size} height={size} viewBox="0 0 172 172" style={{ transform: "rotate(-90deg)" }}>
       <circle cx="86" cy="86" r={R} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={STROKE} />
       <circle
         cx="86" cy="86" r={R} fill="none"
-        stroke={color} strokeWidth={STROKE} strokeLinecap="round"
-        strokeDasharray={CIRC}
-        strokeDashoffset={CIRC * (1 - progress)}
+        stroke={active ? C.amber : C.text3} strokeWidth={STROKE} strokeLinecap="round"
+        strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - progress)}
         style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s" }}
       />
     </svg>
@@ -198,11 +198,17 @@ const ICONS = {
   home: "M3 10.5 12 3l9 7.5M5 9.5V21h5v-6h4v6h5V9.5",
   check: "M20 6 9 17l-5-5",
   copy: "M9 9h11v11H9zM5 15H4V4h11v1",
+  target: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z",
+  gift: "M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7c-1.5 0-4.5-.5-4.5-3S11 1.5 12 7zM12 7c1.5 0 4.5-.5 4.5-3S13 1.5 12 7z",
+  up: "M7 17 17 7M7 7h10v10",
 };
 
 /* --------------------------------- component ------------------------------ */
 
+type Tab = "home" | "mine" | "referrals" | "wallet";
+
 export default function Dashboard() {
+  const [tab, setTab] = useState<Tab>("home");
   const [balance, setBalance] = useState(1250.5);
   const [isMining, setIsMining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
@@ -290,6 +296,13 @@ export default function Dashboard() {
   const progress = isMining ? 1 - timeLeft / SESSION_SECONDS : 0;
   const sessionEarned = isMining ? ((SESSION_SECONDS - timeLeft) * BASE_RATE) / 3600 : 0;
 
+  const NAV: { id: Tab; icon: string; label: string }[] = [
+    { id: "home", icon: ICONS.home, label: "Home" },
+    { id: "mine", icon: ICONS.target, label: "Mine" },
+    { id: "referrals", icon: ICONS.users, label: "Referrals" },
+    { id: "wallet", icon: ICONS.wallet, label: "Wallet" },
+  ];
+
   return (
     <main style={S.page}>
       <div style={S.wrap}>
@@ -301,183 +314,326 @@ export default function Dashboard() {
             </svg>
             ZEPTO
           </div>
-          <button
-            style={S.walletBtn(!!wallet)}
-            onClick={connectWallet}
-            onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-1px)")}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = "none")}
-          >
+          <button style={S.walletBtn(!!wallet)} onClick={connectWallet}>
             <I d={ICONS.wallet} color={wallet ? C.text2 : "#0a0a0a"} size={15} />
             {wallet ?? "Connect wallet"}
           </button>
         </header>
 
-        {/* ------------------------------- hero -------------------------------- */}
-        <section className="zhero" style={S.hero}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={S.label}>Total balance</span>
-              {isMining && (
-                <span style={S.chip(C.green, C.greenSoft)}>
-                  <span style={{ width: 6, height: 6, borderRadius: 3, background: C.green, animation: "pulse 1.2s infinite" }} />
-                  live
-                </span>
-              )}
-            </div>
-            <div style={S.balance}>
-              {balance.toFixed(isMining ? 4 : 2)}{" "}
-              <span style={S.balanceUnit}>Z-Points</span>
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <span style={S.chip(C.amber, C.amberSoft)}>
-                <I d={ICONS.gauge} color={C.amber} size={13} /> +{BASE_RATE.toFixed(1)} / hour
-              </span>
-              {isMining && (
-                <span style={S.chip(C.text2, C.panel)}>
-                  +{sessionEarned.toFixed(4)} this session
-                </span>
-              )}
-            </div>
-            <button
-              style={S.primaryBtn(isMining)}
-              disabled={isMining}
-              onClick={startSession}
-              onMouseEnter={(e) => { if (!isMining) e.currentTarget.style.transform = "translateY(-1px)"; }}
-              onMouseLeave={(e) => (e.currentTarget.style.transform = "none")}
-            >
-              {isMining ? "Mining session in progress" : "Start 24h mining session"}
-            </button>
-          </div>
+        {/* ================================ HOME ================================ */}
+        {tab === "home" && (
+          <div className="zpage">
+            <section className="zhero" style={S.hero}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "inherit" }}>
+                  <span style={S.label}>Total balance</span>
+                  {isMining && (
+                    <span style={S.chip(C.green, C.greenSoft)}>
+                      <span style={{ width: 6, height: 6, borderRadius: 3, background: C.green, animation: "pulse 1.2s infinite" }} />
+                      live
+                    </span>
+                  )}
+                </div>
+                <div style={S.balance}>
+                  {balance.toFixed(isMining ? 4 : 2)} <span style={S.balanceUnit}>Z-Points</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "inherit" }}>
+                  <span style={S.chip(C.amber, C.amberSoft)}>
+                    <I d={ICONS.gauge} color={C.amber} size={13} /> +{BASE_RATE.toFixed(1)} / hour
+                  </span>
+                  {isMining && (
+                    <span style={S.chip(C.text2, C.panel)}>+{sessionEarned.toFixed(4)} this session</span>
+                  )}
+                </div>
+                <button
+                  style={S.primaryBtn(isMining)}
+                  disabled={isMining}
+                  onClick={startSession}
+                >
+                  {isMining ? "Mining session in progress" : "Start 24h mining session"}
+                </button>
+              </div>
+              <div style={S.ringWrap}>
+                <Ring progress={progress} active={isMining} />
+                <div style={S.ringCenter}>
+                  <span style={{ ...S.ringTime, color: isMining ? C.text : C.text3 }}>{formatTime(timeLeft)}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: isMining ? C.amber : C.text3 }}>
+                    {isMining ? "SESSION ACTIVE" : "READY"}
+                  </span>
+                </div>
+              </div>
+            </section>
 
-          <div style={S.ringWrap}>
-            <Ring progress={progress} active={isMining} />
-            <div style={S.ringCenter}>
-              <span style={{ ...S.ringTime, color: isMining ? C.text : C.text3 }}>
-                {formatTime(timeLeft)}
-              </span>
-              <span style={{ ...S.ringLabel, color: isMining ? C.amber : C.text3 }}>
-                {isMining ? "session active" : "ready"}
-              </span>
-            </div>
-          </div>
-        </section>
+            <section className="zstats" style={S.stats}>
+              <div style={S.statCard}>
+                <div style={S.statIcon(C.greenSoft)}><I d={ICONS.users} color={C.green} /></div>
+                <span style={S.label}>Referrals</span>
+                <div style={S.statValue}>12 active</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ ...S.statSub, color: C.green }}>+7% lifetime share</span>
+                  <button onClick={() => setTab("referrals")} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex" }}>
+                    <I d={ICONS.up} color={C.text3} size={15} />
+                  </button>
+                </div>
+              </div>
+              <div style={S.statCard}>
+                <div style={S.statIcon(C.purpleSoft)}><I d={ICONS.flame} color={C.purple} /></div>
+                <span style={S.label}>Daily streak</span>
+                <div style={S.statValue}>Day 5 of 7</div>
+                <div style={S.streakRow}>
+                  {[true, true, true, true, true, false, false].map((f, i) => (
+                    <span key={i} style={S.streakSeg(f)} />
+                  ))}
+                </div>
+                <span style={{ ...S.statSub, color: C.purple, marginTop: 8, display: "inline-block" }}>+35% bonus active</span>
+              </div>
+              <div style={S.statCard}>
+                <div style={S.statIcon(C.amberSoft)}><I d={ICONS.bolt} color={C.amber} /></div>
+                <span style={S.label}>Mining rate</span>
+                <div style={S.statValue}>10.0 <span style={{ fontSize: 13, color: C.text2 }}>Z/hr</span></div>
+                <span style={{ ...S.statSub, color: C.text2 }}>base rate</span>
+              </div>
+            </section>
 
-        {/* ------------------------------ stats -------------------------------- */}
-        <section className="zstats" style={S.stats}>
-          <div
-            style={S.statCard}
-            onMouseEnter={(e) => (e.currentTarget.style.background = C.panelHover)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = C.panel)}
-          >
-            <div style={S.statIcon(C.greenSoft)}>
-              <I d={ICONS.users} color={C.green} />
-            </div>
-            <span style={S.label}>Referrals</span>
-            <div style={S.statValue}>12 active</div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ ...S.statSub, color: C.green }}>+7% lifetime share</span>
-              <button
-                onClick={copyRef}
-                style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex" }}
-                title="Copy referral link"
-              >
-                <I d={ICONS.copy} color={C.text3} size={15} />
-              </button>
-            </div>
+            <section style={{ ...S.card, marginTop: 16, padding: "20px 24px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+                <span style={S.label}>Mining time this week</span>
+                <span style={{ fontSize: 12, color: C.text3 }}>hours / day</span>
+              </div>
+              <svg width="100%" height="72" viewBox="0 0 320 72" preserveAspectRatio="none">
+                {WEEK.map((d, i) => (
+                  <rect key={i} x={8 + i * 44} y={72 - d.h * 6.6} width="24" height={d.h * 6.6} rx="3"
+                    fill={i === WEEK.length - 1 ? C.amber : "rgba(245,158,11,0.3)"} />
+                ))}
+              </svg>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.text3, padding: "4px 6px 0" }}>
+                {WEEK.map((d, i) => (
+                  <span key={i} style={i === WEEK.length - 1 ? { color: C.amber, fontWeight: 700 } : undefined}>{d.d}</span>
+                ))}
+              </div>
+            </section>
           </div>
+        )}
 
-          <div
-            style={S.statCard}
-            onMouseEnter={(e) => (e.currentTarget.style.background = C.panelHover)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = C.panel)}
-          >
-            <div style={S.statIcon(C.purpleSoft)}>
-              <I d={ICONS.flame} color={C.purple} />
-            </div>
-            <span style={S.label}>Daily streak</span>
-            <div style={S.statValue}>Day 5 of 7</div>
-            <div style={S.streakRow}>
-              {[true, true, true, true, true, false, false].map((f, i) => (
-                <span key={i} style={S.streakSeg(f)} />
+        {/* ================================ MINE ================================ */}
+        {tab === "mine" && (
+          <div className="zpage">
+            <h2 style={S.pageTitle}>Mining</h2>
+            <p style={S.pageSub}>Your session, rate and history</p>
+
+            <section className="zhero" style={{ ...S.hero, gridTemplateColumns: "1fr auto" }}>
+              <div>
+                <span style={S.label}>{isMining ? "Session in progress" : "No active session"}</span>
+                <div style={{ ...S.balance, fontSize: 34 }}>
+                  +{sessionEarned > 0 ? sessionEarned.toFixed(4) : "0.0000"}{" "}
+                  <span style={S.balanceUnit}>Z-Points</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <span style={S.chip(C.amber, C.amberSoft)}>
+                    <I d={ICONS.gauge} color={C.amber} size={13} /> {BASE_RATE.toFixed(1)} Z/hr base
+                  </span>
+                  {isMining && (
+                    <span style={S.chip(C.purple, C.purpleSoft)}>
+                      <I d={ICONS.flame} color={C.purple} size={13} /> streak +35%
+                    </span>
+                  )}
+                </div>
+                <button style={S.primaryBtn(isMining)} disabled={isMining} onClick={startSession}>
+                  {isMining ? "Mining session in progress" : "Start 24h mining session"}
+                </button>
+              </div>
+              <div style={S.ringWrap}>
+                <Ring progress={progress} active={isMining} />
+                <div style={S.ringCenter}>
+                  <span style={{ ...S.ringTime, color: isMining ? C.text : C.text3 }}>{formatTime(timeLeft)}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: isMining ? C.amber : C.text3 }}>
+                    {isMining ? "SESSION ACTIVE" : "READY"}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            <section style={{ ...S.card, marginTop: 16 }}>
+              <span style={S.label}>Session history</span>
+              <div style={{ marginTop: 8 }}>
+                {SESSION_HISTORY.map((s, i) => (
+                  <div key={i} style={S.row}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{s.label}</div>
+                      <div style={S.rowMeta}>{s.status === "active" ? "in progress" : "completed"}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ ...S.statSub, color: s.status === "active" ? C.amber : C.green }}>+{s.earned.toFixed(1)}</div>
+                      {s.status === "active" && (
+                        <span style={{ ...S.chip(C.amber, C.amberSoft), fontSize: 10, padding: "2px 8px" }}>active</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section style={{ ...S.card, marginTop: 16 }}>
+              <span style={S.label}>Boosts</span>
+              <div style={{ marginTop: 8 }}>
+                {[
+                  { icon: ICONS.flame, color: C.purple, soft: C.purpleSoft, name: "Streak boost", desc: "+35% while streak is active", state: "active" },
+                  { icon: ICONS.gift, color: C.green, soft: C.greenSoft, name: "Referral boost", desc: "+7% per active referral share", state: "soon" },
+                  { icon: ICONS.bolt, color: C.amber, soft: C.amberSoft, name: "Ad boost", desc: "Watch ads to double rate for 1h", state: "soon" },
+                ].map((b) => (
+                  <div key={b.name} style={S.row}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ ...S.statIcon(b.soft), marginBottom: 0 }}><I d={b.icon} color={b.color} size={16} /></div>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 600 }}>{b.name}</div>
+                        <div style={S.rowMeta}>{b.desc}</div>
+                      </div>
+                    </div>
+                    <span style={{
+                      ...S.chip(b.state === "active" ? C.green : C.text3, b.state === "active" ? C.greenSoft : C.panel),
+                      fontSize: 10, padding: "3px 10px",
+                    }}>
+                      {b.state}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* ============================== REFERRALS ============================= */}
+        {tab === "referrals" && (
+          <div className="zpage">
+            <h2 style={S.pageTitle}>Referrals</h2>
+            <p style={S.pageSub}>Earn 7% lifetime share from every referral</p>
+
+            <section className="zhero" style={{ ...S.hero, gridTemplateColumns: "1fr" }}>
+              <div>
+                <span style={S.label}>Your referral link</span>
+                <div style={{
+                  marginTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 16px",
+                }}>
+                  <span style={{ ...S.rowAddr, color: C.text2 }}>zepto.app/r/YOUR-CODE</span>
+                  <button onClick={copyRef} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", padding: 4 }}>
+                    <I d={ICONS.copy} color={C.amber} size={17} />
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="zstats" style={{ ...S.stats, gridTemplateColumns: "repeat(3, 1fr)" }}>
+              {[
+                { icon: ICONS.users, color: C.green, soft: C.greenSoft, label: "Total referrals", value: "24" },
+                { icon: ICONS.bolt, color: C.amber, soft: C.amberSoft, label: "Active", value: "12" },
+                { icon: ICONS.gift, color: C.purple, soft: C.purpleSoft, label: "Earned from refs", value: "168.0" },
+              ].map((s) => (
+                <div key={s.label} style={S.statCard}>
+                  <div style={S.statIcon(s.soft)}><I d={s.icon} color={s.color} /></div>
+                  <span style={S.label}>{s.label}</span>
+                  <div style={S.statValue}>{s.value}</div>
+                </div>
               ))}
-            </div>
-            <span style={{ ...S.statSub, color: C.purple, marginTop: 8, display: "inline-block" }}>
-              +35% bonus active
-            </span>
-          </div>
+            </section>
 
-          <div
-            style={S.statCard}
-            onMouseEnter={(e) => (e.currentTarget.style.background = C.panelHover)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = C.panel)}
-          >
-            <div style={S.statIcon(C.amberSoft)}>
-              <I d={ICONS.bolt} color={C.amber} />
-            </div>
-            <span style={S.label}>Mining rate</span>
-            <div style={S.statValue}>
-              10.0 <span style={{ fontSize: 13, color: C.text2 }}>Z/hr</span>
-            </div>
-            <span style={{ ...S.statSub, color: C.text2 }}>base rate</span>
+            <section style={{ ...S.card, marginTop: 16 }}>
+              <span style={S.label}>Recent referrals</span>
+              <div style={{ marginTop: 8 }}>
+                {REFERRALS.map((r, i) => (
+                  <div key={i} style={S.row}>
+                    <div>
+                      <div style={S.rowAddr}>{r.addr}</div>
+                      <div style={S.rowMeta}>Joined {r.joined}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ ...S.statSub, color: C.green }}>+{r.earned}</div>
+                      <span style={{ ...S.chip(C.green, C.greenSoft), fontSize: 10, padding: "2px 8px" }}>active</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
-        </section>
+        )}
 
-        {/* ---------------------------- weekly chart --------------------------- */}
-        <section className="zcard" style={{ marginTop: 16, padding: "20px 24px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-            <span style={S.label}>Mining time this week</span>
-            <span style={{ fontSize: 12, color: C.text3 }}>hours / day</span>
+        {/* =============================== WALLET =============================== */}
+        {tab === "wallet" && (
+          <div className="zpage">
+            <h2 style={S.pageTitle}>Wallet</h2>
+            <p style={S.pageSub}>Connect a wallet to withdraw at TGE</p>
+
+            {!wallet ? (
+              <section className="zhero" style={{ ...S.hero, gridTemplateColumns: "1fr", textAlign: "center" }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, width: "100%" }}>
+                  <div style={{ ...S.statIcon(C.amberSoft), width: 52, height: 52, borderRadius: 16, marginBottom: 4 }}>
+                    <I d={ICONS.wallet} color={C.amber} size={26} />
+                  </div>
+                  <div style={{ fontSize: 17, fontWeight: 700 }}>No wallet connected</div>
+                  <p style={{ ...S.pageSub, margin: 0 }}>Connect MetaMask or any Web3 wallet to secure your Z-Points</p>
+                  <button style={{ ...S.primaryBtn(false), maxWidth: 320 }} onClick={connectWallet}>Connect wallet</button>
+                </div>
+              </section>
+            ) : (
+              <>
+                <section style={{ ...S.card, textAlign: "center" }}>
+                  <span style={S.label}>Connected wallet</span>
+                  <div style={{ ...S.rowAddr, fontSize: 17, margin: "6px 0 12px" }}>{wallet}</div>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                    <span style={S.chip(C.green, C.greenSoft)}><I d={ICONS.check} color={C.green} size={13} /> verified</span>
+                    <span style={S.chip(C.text2, C.panel)}>BSC network</span>
+                  </div>
+                </section>
+
+                <section style={{ ...S.card, marginTop: 16, textAlign: "center" }}>
+                  <span style={S.label}>Withdrawable balance</span>
+                  <div style={{ ...S.balance, fontSize: 36 }}>{balance.toFixed(2)} <span style={S.balanceUnit}>Z-Points</span></div>
+                  <button
+                    style={{ ...S.primaryBtn(false), marginTop: 12 }}
+                    onClick={() => showToast("Withdrawals open at TGE — stay tuned")}
+                  >
+                    Withdraw
+                  </button>
+                </section>
+              </>
+            )}
+
+            <section style={{ ...S.card, marginTop: 16 }}>
+              <span style={S.label}>Recent activity</span>
+              <div style={{ marginTop: 8 }}>
+                {TRANSACTIONS.map((t, i) => (
+                  <div key={i} style={S.row}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{t.label}</div>
+                      <div style={S.rowMeta}>{t.time}</div>
+                    </div>
+                    <span style={{ ...S.statSub, color: t.amt.startsWith("+") ? C.green : C.red }}>{t.amt}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
-          <svg width="100%" height="72" viewBox="0 0 320 72" preserveAspectRatio="none">
-            {WEEK.map((d, i) => (
-              <rect
-                key={i}
-                x={8 + i * 44}
-                y={72 - d.h * 6.6}
-                width="24"
-                height={d.h * 6.6}
-                rx="3"
-                fill={i === WEEK.length - 1 ? C.amber : "rgba(245,158,11,0.3)"}
-              />
-            ))}
-          </svg>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.text3, padding: "4px 6px 0" }}>
-            {WEEK.map((d, i) => (
-              <span key={i} style={i === WEEK.length - 1 ? { color: C.amber, fontWeight: 600 } : undefined}>
-                {d.d}
-              </span>
-            ))}
-          </div>
-        </section>
+        )}
 
         {/* ------------------------------ bottom nav --------------------------- */}
-        <nav
-          className="zbottomnav"
-          style={{
-            position: "sticky", bottom: 12, marginTop: 24,
-            display: "flex", justifyContent: "space-around",
-            background: "rgba(24,24,27,0.92)", backdropFilter: "blur(12px)",
-            border: `1px solid ${C.border}`, borderRadius: 18, padding: "10px 12px",
-          }}
-        >
-          {[
-            { icon: ICONS.home, label: "Home", active: true },
-            { icon: ICONS.gauge, label: "Mine", active: false },
-            { icon: ICONS.users, label: "Referrals", active: false },
-            { icon: ICONS.wallet, label: "Wallet", active: false },
-          ].map((t) => (
-            <button
-              key={t.label}
-              style={{
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                background: "none", border: "none", cursor: "pointer", padding: "4px 14px",
-                color: t.active ? C.amber : C.text3, fontSize: 11, fontWeight: t.active ? 700 : 500,
-              }}
-            >
-              <I d={t.icon} color={t.active ? C.amber : C.text3} size={19} />
-              {t.label}
-            </button>
-          ))}
+        <nav style={S.bottomNav}>
+          {NAV.map((t) => {
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                style={{
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                  background: "none", border: "none", cursor: "pointer", padding: "4px 14px",
+                  color: active ? C.amber : C.text3, fontSize: 11, fontWeight: active ? 700 : 500,
+                }}
+              >
+                <I d={t.icon} color={active ? C.amber : C.text3} size={19} />
+                {t.label}
+              </button>
+            );
+          })}
         </nav>
       </div>
 
@@ -499,6 +655,8 @@ export default function Dashboard() {
 
       <style>{`
         @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+        @keyframes zfade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        .zpage { animation: zfade 0.25s ease-out; }
         button:hover { filter: brightness(1.08); }
         @media (max-width: 700px) {
           .zhero { grid-template-columns: 1fr !important; justify-items: center; text-align: center; }
