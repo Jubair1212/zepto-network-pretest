@@ -1,742 +1,2141 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-const BASE_RATE = 10; // Z-Points per hour
-const SESSION_SECONDS = 24 * 3600;
+const BASE_RATE = 10;
+const SESSION_SECONDS = 24 * 60 * 60;
 
-const WEEK = [
-  { d: "M", h: 4 }, { d: "T", h: 6 }, { d: "W", h: 5 }, { d: "T", h: 6.5 },
-  { d: "F", h: 8 }, { d: "S", h: 7 }, { d: "S", h: 9 },
+const BALANCE_KEY = "zepto_balance";
+const SESSION_KEY = "zepto_mining_session";
+const WALLET_KEY = "zepto_wallet";
+const TASKS_KEY = "zepto_tasks";
+
+type MiningSession = {
+  startedAt: number;
+  endAt: number;
+  baseBalance: number;
+};
+
+type Task = {
+  id: string;
+  title: string;
+  reward: number;
+  url: string;
+  completed: boolean;
+};
+
+const DEFAULT_TASKS: Task[] = [
+  {
+    id: "follow-x",
+    title: "Follow ZEPTO on X",
+    reward: 25,
+    url: "https://x.com",
+    completed: false,
+  },
+  {
+    id: "like-post",
+    title: "Like our latest post",
+    reward: 15,
+    url: "https://x.com",
+    completed: false,
+  },
+  {
+    id: "join-community",
+    title: "Join ZEPTO community",
+    reward: 20,
+    url: "https://x.com",
+    completed: false,
+  },
 ];
 
-const INITIAL_TASKS = [
-  { id: "x_follow", title: "Follow @ZeptoApp on X", reward: 50, url: "https://x.com", completed: false },
-  { id: "x_like_retweet", title: "Like & Retweet Pinned Post", reward: 30, url: "https://x.com", completed: false },
-  { id: "x_comment", title: "Comment & Tag 3 Friends on X", reward: 40, url: "https://x.com", completed: false },
-  { id: "x_post_hashtag", title: "Post about Zepto with #ZeptoMining", reward: 100, url: "https://x.com", completed: false },
-];
-
-const SESSION_HISTORY = [
-  { label: "Current session", earned: 8.33, status: "active" },
-  { label: "Yesterday", earned: 240.0, status: "completed" },
-  { label: "2 days ago", earned: 240.0, status: "completed" },
-  { label: "3 days ago", earned: 168.0, status: "completed" },
-];
-
-const REFERRALS = [
-  { addr: "0x8f3a…21bc", joined: "2h ago", earned: "16.8" },
-  { addr: "0x1cd9…a4f0", joined: "1d ago", earned: "33.6" },
-  { addr: "0x77be…09d3", joined: "2d ago", earned: "50.4" },
-  { addr: "0x4a20…e771", joined: "4d ago", earned: "67.2" },
-];
-
-const TRANSACTIONS = [
-  { label: "Session reward", amt: "+240.0", time: "Yesterday" },
-  { label: "Referral share", amt: "+16.8", time: "2d ago" },
-  { label: "Session reward", amt: "+240.0", time: "2d ago" },
-  { label: "Streak bonus", amt: "+84.0", time: "3d ago" },
-];
-
-function formatTime(s: number) {
-  const h = Math.floor(s / 3600).toString().padStart(2, "0");
-  const m = Math.floor((s % 3600) / 60).toString().padStart(2, "0");
-  const sec = Math.floor(s % 60).toString().padStart(2, "0");
-  return `${h}:${m}:${sec}`;
+function formatNumber(value: number, decimals = 2) {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value);
 }
 
-const C = {
-  bg: "#07080d",
-  panel: "rgba(255,255,255,0.03)",
-  border: "rgba(255,255,255,0.07)",
-  text: "#f4f4f5",
-  text2: "#a1a1aa",
-  text3: "#52525b",
-  amber: "#f59e0b",
-  amberSoft: "rgba(245,158,11,0.12)",
-  green: "#34d399",
-  greenSoft: "rgba(52,211,153,0.12)",
-  purple: "#c084fc",
-  purpleSoft: "rgba(192,132,252,0.12)",
-  red: "#f87171",
-  redSoft: "rgba(248,113,113,0.12)",
-  blue: "#38bdf8",
-  blueSoft: "rgba(56,189,248,0.12)",
-};
+function formatTime(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
 
-const S = {
-  page: {
-    minHeight: "100vh",
-    background: C.bg,
-    color: C.text,
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif",
-    padding: "24px 20px 40px",
-  } as React.CSSProperties,
-  wrap: { width: "100%", maxWidth: 860, margin: "0 auto" } as React.CSSProperties,
-  nav: {
-    display: "flex", justifyContent: "space-between", alignItems: "center",
-    paddingBottom: 20, borderBottom: `1px solid ${C.border}`,
-  } as React.CSSProperties,
-  brand: { display: "flex", alignItems: "center", gap: 10, fontWeight: 800, fontSize: 20, letterSpacing: 1 } as React.CSSProperties,
-  walletBtn: (connected: boolean): React.CSSProperties => ({
-    display: "flex", alignItems: "center", gap: 8,
-    background: connected ? C.panel : C.amber,
-    color: connected ? C.text : "#0a0a0a",
-    border: `1px solid ${connected ? C.border : "transparent"}`,
-    padding: "9px 16px", borderRadius: 999, fontWeight: 600, fontSize: 13,
-    cursor: "pointer", fontVariantNumeric: "tabular-nums",
-  }),
-  hero: {
-    marginTop: 24, background: C.panel, border: `1px solid ${C.border}`,
-    borderRadius: 20, padding: "32px 28px",
-    display: "grid", gridTemplateColumns: "1fr auto", gap: 24, alignItems: "center",
-  } as React.CSSProperties,
-  label: { fontSize: 13, color: C.text2, fontWeight: 500 } as React.CSSProperties,
-  balance: { fontSize: 46, fontWeight: 800, margin: "8px 0 4px", fontVariantNumeric: "tabular-nums" } as React.CSSProperties,
-  balanceUnit: { fontSize: 18, fontWeight: 600, color: C.text2 } as React.CSSProperties,
-  chip: (color: string, soft: string): React.CSSProperties => ({
-    display: "inline-flex", alignItems: "center", gap: 6,
-    fontSize: 12, fontWeight: 600, color, background: soft,
-    border: `1px solid ${soft}`, padding: "5px 12px", borderRadius: 999,
-  }),
-  primaryBtn: (disabled: boolean): React.CSSProperties => ({
-    marginTop: 24, width: "100%", padding: "16px",
-    background: disabled ? C.panel : C.amber,
-    color: disabled ? C.text3 : "#0a0a0a",
-    fontWeight: 700, fontSize: 15,
-    border: `1px solid ${disabled ? C.border : "transparent"}`,
-    borderRadius: 14, cursor: disabled ? "default" : "pointer",
-  }),
-  quitBtn: {
-    marginTop: 10, width: "100%", padding: "12px",
-    background: C.redSoft,
-    color: C.red,
-    fontWeight: 600, fontSize: 14,
-    border: `1px solid ${C.red}`,
-    borderRadius: 14, cursor: "pointer",
-    transition: "0.2s ease",
-  } as React.CSSProperties,
-  ringWrap: { position: "relative", width: 172, height: 172 } as React.CSSProperties,
-  ringCenter: {
-    position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-    alignItems: "center", justifyContent: "center", gap: 4,
-  } as React.CSSProperties,
-  ringTime: { fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" } as React.CSSProperties,
-  stats: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginTop: 16 } as React.CSSProperties,
-  statCard: {
-    background: C.panel, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20,
-  } as React.CSSProperties,
-  statIcon: (soft: string): React.CSSProperties => ({
-    width: 34, height: 34, borderRadius: 10, display: "flex",
-    alignItems: "center", justifyContent: "center", background: soft, marginBottom: 12,
-  }),
-  statValue: { fontSize: 20, fontWeight: 700, margin: "2px 0 4px" } as React.CSSProperties,
-  statSub: { fontSize: 12, fontWeight: 600 } as React.CSSProperties,
-  streakRow: { display: "flex", gap: 6, marginTop: 10 } as React.CSSProperties,
-  streakSeg: (filled: boolean): React.CSSProperties => ({
-    flex: 1, height: 6, borderRadius: 3,
-    background: filled ? C.purple : "rgba(255,255,255,0.08)",
-  }),
-  card: {
-    background: C.panel, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20,
-  } as React.CSSProperties,
-  pageTitle: { fontSize: 22, fontWeight: 800, margin: "24px 0 4px" } as React.CSSProperties,
-  pageSub: { fontSize: 13, color: C.text2, marginBottom: 16 } as React.CSSProperties,
-  row: {
-    display: "flex", justifyContent: "space-between", alignItems: "center",
-    padding: "12px 0", borderBottom: `1px solid ${C.border}`,
-  } as React.CSSProperties,
-  rowAddr: { fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums" } as React.CSSProperties,
-  rowMeta: { fontSize: 12, color: C.text3 } as React.CSSProperties,
-  bottomNav: {
-    position: "sticky", bottom: 12, marginTop: 24,
-    display: "flex", justifyContent: "space-around",
-    background: "rgba(24,24,27,0.92)", backdropFilter: "blur(12px)",
-    border: `1px solid ${C.border}`, borderRadius: 18, padding: "10px 12px",
-    zIndex: 20,
-  } as React.CSSProperties,
-  taskBtn: (completed: boolean): React.CSSProperties => ({
-    padding: "8px 14px",
-    background: completed ? C.greenSoft : C.amber,
-    color: completed ? C.green : "#0a0a0a",
-    border: `1px solid ${completed ? C.green : "transparent"}`,
-    borderRadius: 10,
-    fontWeight: 700,
-    fontSize: 12,
-    cursor: completed ? "default" : "pointer",
-  }),
-};
-
-function Ring({ progress, active, size = 172 }: { progress: number; active: boolean; size?: number }) {
-  const R = 76, STROKE = 8, CIRC = 2 * Math.PI * R;
-  return (
-    <svg width={size} height={size} viewBox="0 0 172 172" style={{ transform: "rotate(-90deg)" }}>
-      <circle cx="86" cy="86" r={R} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={STROKE} />
-      <circle
-        cx="86" cy="86" r={R} fill="none"
-        stroke={active ? C.amber : C.text3} strokeWidth={STROKE} strokeLinecap="round"
-        strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - Math.min(1, Math.max(0, progress)))}
-        style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s" }}
-      />
-    </svg>
-  );
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(
+    2,
+    "0"
+  )}:${String(s).padStart(2, "0")}`;
 }
 
-const I = ({ d, color, size = 17 }: { d: string; color: string; size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d={d} />
-  </svg>
-);
+function shortenAddress(address: string) {
+  if (!address) return "";
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
 
-const ICONS = {
-  bolt: "M13 2 3 14h7l-1 8 10-12h-7l1-8z",
-  users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M13 7a4 4 0 0 1-8 0 4 4 0 0 1 8 0z",
-  flame: "M12 22c4 0 7-2.7 7-7 0-3-2-5.5-3.5-7C14 6.5 13 4 13 2c-3 2-5 5-5 8-1-.7-1.7-1.7-2-3-1.5 1.7-3 4-3 7 0 4.3 3 7 9 8z",
-  gauge: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 3a9 9 0 0 1 9 9h-3a6 6 0 0 0-12 0H3a9 9 0 0 1 9-9zM12 21a9 9 0 0 0 9-9",
-  wallet: "M20 7H4a2 2 0 0 1 0-4h14v4M4 7v12a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1M16 13h4v4h-4a2 2 0 0 1 0-4z",
-  home: "M3 10.5 12 3l9 7.5M5 9.5V21h5v-6h4v6h5V9.5",
-  check: "M20 6 9 17l-5-5",
-  copy: "M9 9h11v11H9zM5 15H4V4h11v1",
-  target: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z",
-  gift: "M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7c-1.5 0-4.5-.5-4.5-3S11 1.5 12 7zM12 7c1.5 0 4.5-.5 4.5-3S13 1.5 12 7z",
-  up: "M7 17 17 7M7 7h10v10",
-  tasks: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",
-  xLogo: "M4 4l11.733 16h4.267l-11.733 -16z M4 20l6.768 -6.768 M13.232 10.768l6.768 -6.768",
-};
+function getStoredNumber(key: string, fallback = 0) {
+  try {
+    const value = localStorage.getItem(key);
+    if (value === null) return fallback;
 
-type Tab = "home" | "mine" | "tasks" | "referrals" | "wallet";
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
-export default function Dashboard() {
-  const [tab, setTab] = useState<Tab>("home");
-  const [balance, setBalance] = useState(1250.5);
-  const [isMining, setIsMining] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [wallet, setWallet] = useState<string | null>(null);
-  const [tasks, setTasks] = useState(INITIAL_TASKS);
-  const [toast, setToast] = useState<string | null>(null);
+function saveStorage(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Ignore localStorage errors.
+  }
+}
+
+function getChainName(chainId: string | null) {
+  if (!chainId) return "Unknown network";
+
+  const id = chainId.toLowerCase();
+
+  if (id === "0x38") return "BNB Smart Chain";
+  if (id === "0x1") return "Ethereum";
+  if (id === "0x89") return "Polygon";
+  if (id === "0xa") return "Optimism";
+  if (id === "0xa4b1") return "Arbitrum";
+
+  return `Chain ${parseInt(id, 16) || "Unknown"}`;
+}
+
+export default function Home() {
   const [mounted, setMounted] = useState(false);
 
-  const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2600);
+  const [tab, setTab] = useState("home");
+
+  const [balance, setBalance] = useState(0);
+
+  const [session, setSession] = useState<MiningSession | null>(null);
+
+  const [timeLeft, setTimeLeft] = useState(0);
+
+  const [tasks, setTasks] = useState<Task[]>(DEFAULT_TASKS);
+
+  const [wallet, setWallet] = useState("");
+
+  const [chainId, setChainId] = useState<string | null>(null);
+
+  const [toast, setToast] = useState("");
+
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const miningRate = BASE_RATE;
+
+  const sessionElapsed = useMemo(() => {
+    if (!session) return 0;
+
+    const elapsed = Math.floor(
+      (Date.now() - session.startedAt) / 1000
+    );
+
+    return Math.max(
+      0,
+      Math.min(SESSION_SECONDS, elapsed)
+    );
+  }, [session, timeLeft]);
+
+  const sessionEarned = useMemo(() => {
+    if (!session) return 0;
+
+    return (miningRate * sessionElapsed) / 3600;
+  }, [session, sessionElapsed, miningRate]);
+
+  const progress = useMemo(() => {
+    if (!session) return 0;
+
+    return Math.min(
+      100,
+      Math.max(
+        0,
+        (sessionElapsed / SESSION_SECONDS) * 100
+      )
+    );
+  }, [session, sessionElapsed]);
+
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+
+    if (toastTimer.current) {
+      clearTimeout(toastTimer.current);
+    }
+
+    toastTimer.current = setTimeout(() => {
+      setToast("");
+    }, 2500);
   }, []);
 
-  /* Hydration & Saved State Restoring */
+  // --------------------------------
+  // Restore saved data
+  // --------------------------------
+
   useEffect(() => {
     setMounted(true);
+
     try {
-      const savedWallet = localStorage.getItem("zepto_wallet");
-      if (savedWallet) setWallet(savedWallet);
+      const savedBalance = getStoredNumber(
+        BALANCE_KEY,
+        0
+      );
 
-      const savedTasks = localStorage.getItem("zepto_tasks");
-      if (savedTasks) setTasks(JSON.parse(savedTasks));
+      setBalance(savedBalance);
 
-      const savedState = localStorage.getItem("zepto_state");
-      if (savedState) {
-        const { balance: savedBal, endAt } = JSON.parse(savedState);
-        const now = Date.now();
+      const savedTasks =
+        localStorage.getItem(TASKS_KEY);
 
-        if (endAt && endAt > now) {
-          const remainingSeconds = Math.floor((endAt - now) / 1000);
-          const elapsedSeconds = SESSION_SECONDS - remainingSeconds;
-          setBalance(savedBal + (BASE_RATE / 3600) * elapsedSeconds);
-          setTimeLeft(remainingSeconds);
-          setIsMining(true);
-        } else if (endAt && endAt <= now) {
-          setBalance(savedBal + (BASE_RATE / 3600) * SESSION_SECONDS);
-          setIsMining(false);
-          setTimeLeft(0);
-        } else {
-          setBalance(savedBal);
+      if (savedTasks) {
+        const parsed = JSON.parse(savedTasks);
+
+        if (Array.isArray(parsed)) {
+          setTasks(parsed);
+        }
+      }
+
+      const savedWallet =
+        localStorage.getItem(WALLET_KEY);
+
+      if (savedWallet) {
+        setWallet(savedWallet);
+      }
+
+      const savedSession =
+        localStorage.getItem(SESSION_KEY);
+
+      if (savedSession) {
+        const parsed: MiningSession =
+          JSON.parse(savedSession);
+
+        if (
+          parsed &&
+          parsed.startedAt &&
+          parsed.endAt &&
+          parsed.baseBalance >= 0
+        ) {
+          const now = Date.now();
+
+          if (now < parsed.endAt) {
+            setSession(parsed);
+            setTimeLeft(
+              Math.ceil(
+                (parsed.endAt - now) / 1000
+              )
+            );
+          } else {
+            const finalBalance =
+              parsed.baseBalance +
+              (miningRate * SESSION_SECONDS) /
+                3600;
+
+            setBalance(finalBalance);
+
+            saveStorage(
+              BALANCE_KEY,
+              String(finalBalance)
+            );
+
+            localStorage.removeItem(SESSION_KEY);
+          }
         }
       }
     } catch {
-      // Ignore localStorage errors
+      // Safe fallback for corrupted localStorage.
     }
-  }, []);
+  }, [miningRate]);
 
-  /* Persist State */
+  // --------------------------------
+  // Mining timer
+  // --------------------------------
+
+  useEffect(() => {
+    if (!session) {
+      setTimeLeft(0);
+      return;
+    }
+
+    const updateMining = () => {
+      const now = Date.now();
+
+      const remaining = Math.max(
+        0,
+        Math.ceil(
+          (session.endAt - now) / 1000
+        )
+      );
+
+      const elapsed = Math.max(
+        0,
+        Math.min(
+          SESSION_SECONDS,
+          Math.floor(
+            (now - session.startedAt) / 1000
+          )
+        )
+      );
+
+      const earned =
+        (miningRate * elapsed) / 3600;
+
+      const currentBalance =
+        session.baseBalance + earned;
+
+      setTimeLeft(remaining);
+      setBalance(currentBalance);
+
+      if (remaining <= 0) {
+        const finalBalance =
+          session.baseBalance +
+          (miningRate * SESSION_SECONDS) /
+            3600;
+
+        setBalance(finalBalance);
+
+        saveStorage(
+          BALANCE_KEY,
+          String(finalBalance)
+        );
+
+        localStorage.removeItem(SESSION_KEY);
+
+        setSession(null);
+
+        showToast(
+          "Mining session completed! 🎉"
+        );
+      }
+    };
+
+    updateMining();
+
+    const interval = setInterval(
+      updateMining,
+      1000
+    );
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [
+    session,
+    miningRate,
+    showToast,
+  ]);
+
+  // --------------------------------
+  // Save balance
+  // --------------------------------
+
+  useEffect(() => {
+    if (!mounted || session) return;
+
+    saveStorage(
+      BALANCE_KEY,
+      String(balance)
+    );
+  }, [balance, mounted, session]);
+
+  // --------------------------------
+  // Save tasks
+  // --------------------------------
+
   useEffect(() => {
     if (!mounted) return;
-    const endAt = isMining ? Date.now() + timeLeft * 1000 : 0;
-    const baseBalance = isMining
-      ? balance - ((SESSION_SECONDS - timeLeft) * BASE_RATE) / 3600
-      : balance;
 
-    localStorage.setItem(
-      "zepto_state",
-      JSON.stringify({ balance: baseBalance, endAt })
+    saveStorage(
+      TASKS_KEY,
+      JSON.stringify(tasks)
     );
-    localStorage.setItem("zepto_tasks", JSON.stringify(tasks));
-  }, [isMining, timeLeft, balance, tasks, mounted]);
+  }, [tasks, mounted]);
 
-  /* Mining Timer Interval */
-  useEffect(() => {
-    if (!isMining) return;
-    const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          setIsMining(false);
-          showToast("Session complete — rewards claimed");
-          return 0;
-        }
-        return prev - 1;
-      });
-      setBalance((b) => b + BASE_RATE / 3600);
-    }, 1000);
+  // --------------------------------
+  // Start mining
+  // --------------------------------
 
-    return () => clearInterval(interval);
-  }, [isMining, showToast]);
-
-  const startSession = useCallback(() => {
-    setIsMining(true);
-    setTimeLeft(SESSION_SECONDS);
-    showToast("Mining session started — 24h");
-  }, [showToast]);
-
-  const stopSession = useCallback(() => {
-    setIsMining(false);
-    setTimeLeft(0);
-    showToast("Mining session stopped");
-  }, [showToast]);
-
-  const handleTaskClick = (task: typeof INITIAL_TASKS[0]) => {
-    if (task.completed) return;
-    window.open(task.url, "_blank");
-
-    setTimeout(() => {
-      setTasks((prev) =>
-        prev.map((t) => (t.id === task.id ? { ...t, completed: true } : t))
+  const startMining = () => {
+    if (session) {
+      showToast(
+        "Mining is already running."
       );
-      setBalance((b) => b + task.reward);
-      showToast(`+${task.reward} Z-Points earned from X Task!`);
+      return;
+    }
+
+    const now = Date.now();
+
+    const newSession: MiningSession = {
+      startedAt: now,
+      endAt: now + SESSION_SECONDS * 1000,
+      baseBalance: balance,
+    };
+
+    saveStorage(
+      SESSION_KEY,
+      JSON.stringify(newSession)
+    );
+
+    setSession(newSession);
+
+    setTimeLeft(SESSION_SECONDS);
+
+    showToast(
+      "24-hour mining started! ⛏️"
+    );
+  };
+
+  // --------------------------------
+  // Stop mining
+  // --------------------------------
+
+  const stopMining = () => {
+    if (!session) {
+      showToast(
+        "No active mining session."
+      );
+      return;
+    }
+
+    const now = Date.now();
+
+    const elapsed = Math.max(
+      0,
+      Math.min(
+        SESSION_SECONDS,
+        Math.floor(
+          (now - session.startedAt) / 1000
+        )
+      )
+    );
+
+    const earned =
+      (miningRate * elapsed) / 3600;
+
+    const finalBalance =
+      session.baseBalance + earned;
+
+    setBalance(finalBalance);
+
+    saveStorage(
+      BALANCE_KEY,
+      String(finalBalance)
+    );
+
+    localStorage.removeItem(
+      SESSION_KEY
+    );
+
+    setSession(null);
+    setTimeLeft(0);
+
+    showToast(
+      `Mining stopped. +${earned.toFixed(
+        2
+      )} ZP earned.`
+    );
+  };
+
+  // --------------------------------
+  // Wallet
+  // --------------------------------
+
+  const connectWallet = async () => {
+    try {
+      const ethereum = (
+        window as any
+      ).ethereum;
+
+      if (!ethereum) {
+        showToast(
+          "Please install MetaMask first."
+        );
+        return;
+      }
+
+      const accounts =
+        await ethereum.request({
+          method: "eth_requestAccounts",
+        });
+
+      if (!accounts?.length) {
+        showToast(
+          "No wallet account found."
+        );
+        return;
+      }
+
+      const address = accounts[0];
+
+      const currentChain =
+        await ethereum.request({
+          method: "eth_chainId",
+        });
+
+      setWallet(address);
+      setChainId(currentChain);
+
+      saveStorage(
+        WALLET_KEY,
+        address
+      );
+
+      showToast(
+        `Wallet connected: ${shortenAddress(
+          address
+        )}`
+      );
+    } catch (error: any) {
+      if (
+        error?.code === 4001
+      ) {
+        showToast(
+          "Wallet connection rejected."
+        );
+      } else {
+        showToast(
+          "Could not connect wallet."
+        );
+      }
+    }
+  };
+
+  const disconnectWallet = () => {
+    setWallet("");
+    setChainId(null);
+
+    try {
+      localStorage.removeItem(
+        WALLET_KEY
+      );
+    } catch {}
+
+    showToast(
+      "Wallet disconnected from ZEPTO."
+    );
+  };
+
+  // --------------------------------
+  // Wallet listeners
+  // --------------------------------
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    const ethereum = (
+      window as any
+    ).ethereum;
+
+    if (!ethereum?.on) return;
+
+    const handleAccountsChanged = (
+      accounts: string[]
+    ) => {
+      if (!accounts?.length) {
+        setWallet("");
+        setChainId(null);
+
+        try {
+          localStorage.removeItem(
+            WALLET_KEY
+          );
+        } catch {}
+
+        return;
+      }
+
+      setWallet(accounts[0]);
+
+      saveStorage(
+        WALLET_KEY,
+        accounts[0]
+      );
+    };
+
+    const handleChainChanged = (
+      newChainId: string
+    ) => {
+      setChainId(newChainId);
+    };
+
+    ethereum.on(
+      "accountsChanged",
+      handleAccountsChanged
+    );
+
+    ethereum.on(
+      "chainChanged",
+      handleChainChanged
+    );
+
+    return () => {
+      ethereum.removeListener?.(
+        "accountsChanged",
+        handleAccountsChanged
+      );
+
+      ethereum.removeListener?.(
+        "chainChanged",
+        handleChainChanged
+      );
+    };
+  }, [mounted]);
+
+  // --------------------------------
+  // Check wallet on startup
+  // --------------------------------
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    const checkWallet = async () => {
+      try {
+        const ethereum = (
+          window as any
+        ).ethereum;
+
+        if (!ethereum) return;
+
+        const accounts =
+          await ethereum.request({
+            method: "eth_accounts",
+          });
+
+        const currentChain =
+          await ethereum.request({
+            method: "eth_chainId",
+          });
+
+        setChainId(currentChain);
+
+        if (accounts?.length) {
+          setWallet(accounts[0]);
+
+          saveStorage(
+            WALLET_KEY,
+            accounts[0]
+          );
+        }
+      } catch {}
+    };
+
+    checkWallet();
+  }, [mounted]);
+
+  // --------------------------------
+  // Tasks
+  // --------------------------------
+
+  const completeTask = (
+    taskId: string
+  ) => {
+    const task = tasks.find(
+      (item) => item.id === taskId
+    );
+
+    if (!task || task.completed) {
+      return;
+    }
+
+    window.open(
+      task.url,
+      "_blank",
+      "noopener,noreferrer"
+    );
+
+    // Demo mode:
+    // Real verification requires backend/API.
+    setTimeout(() => {
+      setTasks((previous) =>
+        previous.map((item) =>
+          item.id === taskId
+            ? {
+                ...item,
+                completed: true,
+              }
+            : item
+        )
+      );
+
+      setBalance((previous) => {
+        const next =
+          previous + task.reward;
+
+        saveStorage(
+          BALANCE_KEY,
+          String(next)
+        );
+
+        return next;
+      });
+
+      showToast(
+        `+${task.reward} ZP reward claimed!`
+      );
     }, 1500);
   };
 
-  const connectWallet = useCallback(async () => {
-    if (typeof window !== "undefined" && (window as any).ethereum) {
-      try {
-        const accounts = await (window as any).ethereum.request({ method: "eth_requestAccounts" });
-        if (accounts.length > 0) {
-          const a = accounts[0] as string;
-          const formatted = `${a.slice(0, 6)}…${a.slice(-4)}`;
-          setWallet(formatted);
-          localStorage.setItem("zepto_wallet", formatted);
-          showToast("Wallet connected");
-        }
-      } catch {
-        showToast("Wallet connection rejected");
-      }
-    } else {
-      showToast("MetaMask not detected — install a Web3 wallet");
-    }
-  }, [showToast]);
+  // --------------------------------
+  // Referral
+  // --------------------------------
 
-  const copyRef = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText("https://zepto.app/r/YOUR-CODE");
-      showToast("Referral link copied");
+  const referralCode = wallet
+    ? wallet
+        .slice(2, 8)
+        .toUpperCase()
+    : "YOURCODE";
+
+  const referralLink =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/r/${referralCode}`
+      : `https://zepto.app/r/${referralCode}`;
+
+  const copyReferral = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        referralLink
+      );
+
+      showToast(
+        "Referral link copied! 🔗"
+      );
+    } catch {
+      showToast(
+        "Could not copy referral link."
+      );
     }
   };
 
-  if (!mounted) return null;
+  // --------------------------------
+  // Navigation
+  // --------------------------------
 
-  const progress = isMining ? 1 - timeLeft / SESSION_SECONDS : 0;
-  const sessionEarned = isMining ? ((SESSION_SECONDS - timeLeft) * BASE_RATE) / 3600 : 0;
-
-  const NAV: { id: Tab; icon: string; label: string }[] = [
-    { id: "home", icon: ICONS.home, label: "Home" },
-    { id: "mine", icon: ICONS.target, label: "Mine" },
-    { id: "tasks", icon: ICONS.tasks, label: "Tasks" },
-    { id: "referrals", icon: ICONS.users, label: "Referrals" },
-    { id: "wallet", icon: ICONS.wallet, label: "Wallet" },
+  const navigation = [
+    {
+      id: "home",
+      label: "Home",
+      icon: "⌂",
+    },
+    {
+      id: "mine",
+      label: "Mine",
+      icon: "⛏",
+    },
+    {
+      id: "tasks",
+      label: "Tasks",
+      icon: "✓",
+    },
+    {
+      id: "referrals",
+      label: "Refer",
+      icon: "👥",
+    },
+    {
+      id: "wallet",
+      label: "Wallet",
+      icon: "◈",
+    },
   ];
 
+  if (!mounted) {
+    return (
+      <main style={styles.loading}>
+        <div style={styles.loadingLogo}>
+          Z
+        </div>
+        <div>
+          Loading ZEPTO...
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <main style={S.page}>
-      <div style={S.wrap}>
-        <header style={S.nav}>
-          <div style={S.brand}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill={C.amber}>
-              <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" />
-            </svg>
-            ZEPTO
-          </div>
-          <button style={S.walletBtn(!!wallet)} onClick={connectWallet}>
-            <I d={ICONS.wallet} color={wallet ? C.text2 : "#0a0a0a"} size={15} />
-            {wallet ?? "Connect wallet"}
-          </button>
-        </header>
+    <main style={styles.page}>
+      <div style={styles.backgroundGlow} />
 
+      {/* Header */}
+
+      <header style={styles.header}>
+        <div style={styles.logoRow}>
+          <div style={styles.logo}>
+            Z
+          </div>
+
+          <div>
+            <div style={styles.brand}>
+              ZEPTO
+            </div>
+
+            <div style={styles.brandSub}>
+              Web3 Mining Network
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          style={styles.walletTop}
+          onClick={() =>
+            setTab("wallet")
+          }
+        >
+          {wallet
+            ? shortenAddress(wallet)
+            : "Connect Wallet"}
+        </button>
+      </header>
+
+      {/* Main */}
+
+      <section style={styles.container}>
         {tab === "home" && (
-          <div className="zpage">
-            <section className="zhero" style={S.hero}>
+          <>
+            <div style={styles.hero}>
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span style={S.label}>Total balance</span>
-                  {isMining && (
-                    <span style={S.chip(C.green, C.greenSoft)}>
-                      <span style={{ width: 6, height: 6, borderRadius: 3, background: C.green, animation: "pulse 1.2s infinite" }} />
-                      live
+                <div style={styles.eyebrow}>
+                  DECENTRALIZED
+                  REWARDS
+                </div>
+
+                <h1 style={styles.title}>
+                  Mine Z-Points.
+                  <br />
+                  Build your future.
+                </h1>
+
+                <p style={styles.description}>
+                  Earn ZEPTO points through
+                  daily mining, tasks and
+                  referrals.
+                </p>
+
+                <div style={styles.heroButtons}>
+                  <button
+                    type="button"
+                    style={styles.primaryButton}
+                    onClick={() =>
+                      setTab("mine")
+                    }
+                  >
+                    Start Mining →
+                  </button>
+
+                  <button
+                    type="button"
+                    style={
+                      styles.secondaryButton
+                    }
+                    onClick={() =>
+                      setTab("tasks")
+                    }
+                  >
+                    Earn More
+                  </button>
+                </div>
+              </div>
+
+              <div style={styles.balanceCard}>
+                <div style={styles.cardLabel}>
+                  TOTAL Z-POINTS
+                </div>
+
+                <div
+                  style={
+                    styles.balanceNumber
+                  }
+                >
+                  {formatNumber(balance)}
+                </div>
+
+                <div
+                  style={
+                    styles.balanceUnit
+                  }
+                >
+                  ZP
+                </div>
+
+                <div
+                  style={
+                    styles.miniStats
+                  }
+                >
+                  <div>
+                    <span>
+                      Mining Rate
                     </span>
-                  )}
-                </div>
-                <div style={S.balance}>
-                  {balance.toFixed(isMining ? 4 : 2)} <span style={S.balanceUnit}>Z-Points</span>
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <span style={S.chip(C.amber, C.amberSoft)}>
-                    <I d={ICONS.gauge} color={C.amber} size={13} /> +{BASE_RATE.toFixed(1)} / hour
-                  </span>
-                  {isMining && (
-                    <span style={S.chip(C.text2, C.panel)}>+{sessionEarned.toFixed(4)} this session</span>
-                  )}
-                </div>
+                    <strong>
+                      {miningRate} ZP/h
+                    </strong>
+                  </div>
 
-                {!isMining ? (
-                  <button style={S.primaryBtn(false)} onClick={startSession}>
-                    Start 24h mining session
-                  </button>
-                ) : (
-                  <>
-                    <button style={S.primaryBtn(true)} disabled={true}>
-                      Mining session in progress
-                    </button>
-                    <button style={S.quitBtn} onClick={stopSession}>
-                      Quit / Stop Mining
-                    </button>
-                  </>
-                )}
-              </div>
-              <div style={S.ringWrap}>
-                <Ring progress={progress} active={isMining} />
-                <div style={S.ringCenter}>
-                  <span style={{ ...S.ringTime, color: isMining ? C.text : C.text3 }}>{formatTime(timeLeft)}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: isMining ? C.amber : C.text3 }}>
-                    {isMining ? "SESSION ACTIVE" : "READY"}
-                  </span>
+                  <div>
+                    <span>
+                      Session
+                    </span>
+                    <strong>
+                      24 Hours
+                    </strong>
+                  </div>
                 </div>
               </div>
-            </section>
+            </div>
 
-            <section className="zstats" style={S.stats}>
-              <div style={S.statCard}>
-                <div style={S.statIcon(C.greenSoft)}><I d={ICONS.users} color={C.green} /></div>
-                <span style={S.label}>Referrals</span>
-                <div style={S.statValue}>12 active</div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ ...S.statSub, color: C.green }}>+7% lifetime share</span>
-                  <button onClick={() => setTab("referrals")} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex" }}>
-                    <I d={ICONS.up} color={C.text3} size={15} />
-                  </button>
-                </div>
-              </div>
-              <div style={S.statCard}>
-                <div style={S.statIcon(C.purpleSoft)}><I d={ICONS.flame} color={C.purple} /></div>
-                <span style={S.label}>Daily streak</span>
-                <div style={S.statValue}>Day 5 of 7</div>
-                <div style={S.streakRow}>
-                  {[true, true, true, true, true, false, false].map((f, i) => (
-                    <span key={i} style={S.streakSeg(f)} />
-                  ))}
-                </div>
-                <span style={{ ...S.statSub, color: C.purple, marginTop: 8, display: "inline-block" }}>+35% bonus active</span>
-              </div>
-              <div style={S.statCard}>
-                <div style={S.statIcon(C.amberSoft)}><I d={ICONS.bolt} color={C.amber} /></div>
-                <span style={S.label}>Mining rate</span>
-                <div style={S.statValue}>10.0 <span style={{ fontSize: 13, color: C.text2 }}>Z/hr</span></div>
-                <span style={{ ...S.statSub, color: C.text2 }}>base rate</span>
-              </div>
-            </section>
+            <div style={styles.grid}>
+              <StatCard
+                title="Mining Status"
+                value={
+                  session
+                    ? "ACTIVE"
+                    : "READY"
+                }
+                description={
+                  session
+                    ? formatTime(
+                        timeLeft
+                      )
+                    : "Start a new session"
+                }
+                icon="⛏"
+              />
 
-            <section style={{ ...S.card, marginTop: 16, padding: "20px 24px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-                <span style={S.label}>Mining time this week</span>
-                <span style={{ fontSize: 12, color: C.text3 }}>hours / day</span>
-              </div>
-              <svg width="100%" height="72" viewBox="0 0 320 72" preserveAspectRatio="none">
-                {WEEK.map((d, i) => (
-                  <rect key={i} x={8 + i * 44} y={72 - d.h * 6.6} width="24" height={d.h * 6.6} rx="3"
-                    fill={i === WEEK.length - 1 ? C.amber : "rgba(245,158,11,0.3)"} />
-                ))}
-              </svg>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.text3, padding: "4px 6px 0" }}>
-                {WEEK.map((d, i) => (
-                  <span key={i} style={i === WEEK.length - 1 ? { color: C.amber, fontWeight: 700 } : undefined}>{d.d}</span>
-                ))}
-              </div>
-            </section>
-          </div>
+              <StatCard
+                title="Tasks"
+                value={`${tasks.filter(
+                  (t) => t.completed
+                ).length}/${tasks.length}`}
+                description="Completed"
+                icon="✓"
+              />
+
+              <StatCard
+                title="Referrals"
+                value="0"
+                description="Friends invited"
+                icon="👥"
+              />
+            </div>
+          </>
         )}
 
         {tab === "mine" && (
-          <div className="zpage">
-            <h2 style={S.pageTitle}>Mining</h2>
-            <p style={S.pageSub}>Your session, rate and history</p>
-
-            <section className="zhero" style={{ ...S.hero, gridTemplateColumns: "1fr auto" }}>
-              <div>
-                <span style={S.label}>{isMining ? "Session in progress" : "No active session"}</span>
-                <div style={{ ...S.balance, fontSize: 34 }}>
-                  +{sessionEarned > 0 ? sessionEarned.toFixed(4) : "0.0000"}{" "}
-                  <span style={S.balanceUnit}>Z-Points</span>
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <span style={S.chip(C.amber, C.amberSoft)}>
-                    <I d={ICONS.gauge} color={C.amber} size={13} /> {BASE_RATE.toFixed(1)} Z/hr base
-                  </span>
-                  {isMining && (
-                    <span style={S.chip(C.purple, C.purpleSoft)}>
-                      <I d={ICONS.flame} color={C.purple} size={13} /> streak +35%
-                    </span>
-                  )}
-                </div>
-
-                {!isMining ? (
-                  <button style={S.primaryBtn(false)} onClick={startSession}>
-                    Start 24h mining session
-                  </button>
-                ) : (
-                  <>
-                    <button style={S.primaryBtn(true)} disabled={true}>
-                      Mining session in progress
-                    </button>
-                    <button style={S.quitBtn} onClick={stopSession}>
-                      Quit / Stop Mining
-                    </button>
-                  </>
-                )}
-              </div>
-              <div style={S.ringWrap}>
-                <Ring progress={progress} active={isMining} />
-                <div style={S.ringCenter}>
-                  <span style={{ ...S.ringTime, color: isMining ? C.text : C.text3 }}>{formatTime(timeLeft)}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: isMining ? C.amber : C.text3 }}>
-                    {isMining ? "SESSION ACTIVE" : "READY"}
-                  </span>
-                </div>
-              </div>
-            </section>
-
-            <section style={{ ...S.card, marginTop: 16 }}>
-              <span style={S.label}>Session history</span>
-              <div style={{ marginTop: 8 }}>
-                {SESSION_HISTORY.map((s, i) => (
-                  <div key={i} style={S.row}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>{s.label}</div>
-                      <div style={S.rowMeta}>{s.status === "active" ? "in progress" : "completed"}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ ...S.statSub, color: s.status === "active" ? C.amber : C.green }}>+{s.earned.toFixed(1)}</div>
-                      {s.status === "active" && (
-                        <span style={{ ...S.chip(C.amber, C.amberSoft), fontSize: 10, padding: "2px 8px" }}>active</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
+          <MiningPage
+            balance={balance}
+            session={session}
+            timeLeft={timeLeft}
+            progress={progress}
+            sessionEarned={
+              sessionEarned
+            }
+            miningRate={miningRate}
+            onStart={startMining}
+            onStop={stopMining}
+          />
         )}
 
         {tab === "tasks" && (
-          <div className="zpage">
-            <h2 style={S.pageTitle}>X Quests & Tasks</h2>
-            <p style={S.pageSub}>Complete X (Twitter) tasks to earn bonus Z-Points instantly</p>
-
-            <section style={{ ...S.card, marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={S.statIcon(C.blueSoft)}>
-                  <I d={ICONS.xLogo} color={C.blue} size={18} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 700 }}>Social Bounties</div>
-                  <div style={{ fontSize: 12, color: C.text2 }}>Perform actions on X to earn extra Z-Points</div>
-                </div>
-              </div>
-            </section>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {tasks.map((task) => (
-                <div key={task.id} style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>{task.title}</div>
-                    <div style={{ fontSize: 12, color: C.amber, fontWeight: 700, marginTop: 2 }}>
-                      +{task.reward} Z-Points
-                    </div>
-                  </div>
-                  <button
-                    style={S.taskBtn(task.completed)}
-                    onClick={() => handleTaskClick(task)}
-                    disabled={task.completed}
-                  >
-                    {task.completed ? "Completed" : "Start Task"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          <TasksPage
+            tasks={tasks}
+            onComplete={
+              completeTask
+            }
+          />
         )}
 
         {tab === "referrals" && (
-          <div className="zpage">
-            <h2 style={S.pageTitle}>Referrals</h2>
-            <p style={S.pageSub}>Earn 7% lifetime share from every referral</p>
-
-            <section className="zhero" style={{ ...S.hero, gridTemplateColumns: "1fr" }}>
-              <div>
-                <span style={S.label}>Your referral link</span>
-                <div style={{
-                  marginTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                  background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 16px",
-                }}>
-                  <span style={{ ...S.rowAddr, color: C.text2 }}>zepto.app/r/YOUR-CODE</span>
-                  <button onClick={copyRef} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", padding: 4 }}>
-                    <I d={ICONS.copy} color={C.amber} size={17} />
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <section className="zstats" style={{ ...S.stats, gridTemplateColumns: "repeat(3, 1fr)" }}>
-              {[
-                { icon: ICONS.users, color: C.green, soft: C.greenSoft, label: "Total referrals", value: "24" },
-                { icon: ICONS.bolt, color: C.amber, soft: C.amberSoft, label: "Active", value: "12" },
-                { icon: ICONS.gift, color: C.purple, soft: C.purpleSoft, label: "Earned from refs", value: "168.0" },
-              ].map((s) => (
-                <div key={s.label} style={S.statCard}>
-                  <div style={S.statIcon(s.soft)}><I d={s.icon} color={s.color} /></div>
-                  <span style={S.label}>{s.label}</span>
-                  <div style={S.statValue}>{s.value}</div>
-                </div>
-              ))}
-            </section>
-
-            <section style={{ ...S.card, marginTop: 16 }}>
-              <span style={S.label}>Recent referrals</span>
-              <div style={{ marginTop: 8 }}>
-                {REFERRALS.map((r, i) => (
-                  <div key={i} style={S.row}>
-                    <div>
-                      <div style={S.rowAddr}>{r.addr}</div>
-                      <div style={S.rowMeta}>Joined {r.joined}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ ...S.statSub, color: C.green }}>+{r.earned}</div>
-                      <span style={{ ...S.chip(C.green, C.greenSoft), fontSize: 10, padding: "2px 8px" }}>active</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
+          <ReferralPage
+            link={referralLink}
+            code={referralCode}
+            onCopy={copyReferral}
+          />
         )}
 
         {tab === "wallet" && (
-          <div className="zpage">
-            <h2 style={S.pageTitle}>Wallet</h2>
-            <p style={S.pageSub}>Connect a wallet to withdraw at TGE</p>
-
-            {!wallet ? (
-              <section className="zhero" style={{ ...S.hero, gridTemplateColumns: "1fr", textAlign: "center" }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, width: "100%" }}>
-                  <div style={{ ...S.statIcon(C.amberSoft), width: 52, height: 52, borderRadius: 16, marginBottom: 4 }}>
-                    <I d={ICONS.wallet} color={C.amber} size={26} />
-                  </div>
-                  <div style={{ fontSize: 17, fontWeight: 700 }}>No wallet connected</div>
-                  <p style={{ ...S.pageSub, margin: 0 }}>Connect MetaMask or any Web3 wallet to secure your Z-Points</p>
-                  <button style={{ ...S.primaryBtn(false), maxWidth: 320 }} onClick={connectWallet}>Connect wallet</button>
-                </div>
-              </section>
-            ) : (
-              <>
-                <section style={{ ...S.card, textAlign: "center" }}>
-                  <span style={S.label}>Connected wallet</span>
-                  <div style={{ ...S.rowAddr, fontSize: 17, margin: "6px 0 12px" }}>{wallet}</div>
-                  <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                    <span style={S.chip(C.green, C.greenSoft)}><I d={ICONS.check} color={C.green} size={13} /> verified</span>
-                    <span style={S.chip(C.text2, C.panel)}>BSC network</span>
-                  </div>
-                </section>
-
-                <section style={{ ...S.card, marginTop: 16, textAlign: "center" }}>
-                  <span style={S.label}>Withdrawable balance</span>
-                  <div style={{ ...S.balance, fontSize: 36 }}>{balance.toFixed(2)} <span style={S.balanceUnit}>Z-Points</span></div>
-                  <button
-                    style={{ ...S.primaryBtn(false), marginTop: 12 }}
-                    onClick={() => showToast("Withdrawals open at TGE — stay tuned")}
-                  >
-                    Withdraw
-                  </button>
-                </section>
-              </>
-            )}
-
-            <section style={{ ...S.card, marginTop: 16 }}>
-              <span style={S.label}>Recent activity</span>
-              <div style={{ marginTop: 8 }}>
-                {TRANSACTIONS.map((t, i) => (
-                  <div key={i} style={S.row}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>{t.label}</div>
-                      <div style={S.rowMeta}>{t.time}</div>
-                    </div>
-                    <span style={{ ...S.statSub, color: t.amt.startsWith("+") ? C.green : C.red }}>{t.amt}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
+          <WalletPage
+            wallet={wallet}
+            chainId={chainId}
+            onConnect={
+              connectWallet
+            }
+            onDisconnect={
+              disconnectWallet
+            }
+          />
         )}
+      </section>
 
-        <nav style={S.bottomNav}>
-          {NAV.map((t) => {
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                style={{
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                  background: "none", border: "none", cursor: "pointer", padding: "4px 14px",
-                  color: active ? C.amber : C.text3, fontSize: 11, fontWeight: active ? 700 : 500,
-                }}
-              >
-                <I d={t.icon} color={active ? C.amber : C.text3} size={19} />
-                {t.label}
-              </button>
-            );
-          })}
-        </nav>
-      </div>
+      {/* Bottom Navigation */}
+
+      <nav style={styles.bottomNav}>
+        {navigation.map((item) => (
+          <button
+            type="button"
+            key={item.id}
+            onClick={() =>
+              setTab(item.id)
+            }
+            style={{
+              ...styles.navButton,
+              ...(tab === item.id
+                ? styles.navButtonActive
+                : {}),
+            }}
+          >
+            <span
+              style={
+                styles.navIcon
+              }
+            >
+              {item.icon}
+            </span>
+
+            <span>
+              {item.label}
+            </span>
+          </button>
+        ))}
+      </nav>
+
+      {/* Toast */}
 
       {toast && (
-        <div
-          style={{
-            position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
-            background: "#18181b", border: `1px solid ${C.border}`, color: C.text,
-            padding: "10px 18px", borderRadius: 12, fontSize: 13, fontWeight: 500,
-            display: "flex", alignItems: "center", gap: 8,
-            boxShadow: "0 8px 30px rgba(0,0,0,0.5)", zIndex: 50,
-          }}
-        >
-          <I d={ICONS.check} color={C.green} size={15} />
+        <div style={styles.toast}>
           {toast}
         </div>
       )}
-
-      <style>{`
-        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
-        @keyframes zfade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-        .zpage { animation: zfade 0.25s ease-out; }
-        button:hover { filter: brightness(1.08); }
-        @media (max-width: 700px) {
-          .zhero { grid-template-columns: 1fr !important; justify-items: center; text-align: center; }
-          .zstats { grid-template-columns: 1fr !important; }
-        }
-      `}</style>
     </main>
   );
 }
+
+// ==================================
+// Stat Card
+// ==================================
+
+function StatCard({
+  title,
+  value,
+  description,
+  icon,
+}: {
+  title: string;
+  value: string;
+  description: string;
+  icon: string;
+}) {
+  return (
+    <div style={styles.statCard}>
+      <div style={styles.statIcon}>
+        {icon}
+      </div>
+
+      <div>
+        <div style={styles.cardLabel}>
+          {title}
+        </div>
+
+        <div style={styles.statValue}>
+          {value}
+        </div>
+
+        <div style={styles.statDescription}>
+          {description}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================================
+// Mining Page
+// ==================================
+
+function MiningPage({
+  balance,
+  session,
+  timeLeft,
+  progress,
+  sessionEarned,
+  miningRate,
+  onStart,
+  onStop,
+}: {
+  balance: number;
+  session: MiningSession | null;
+  timeLeft: number;
+  progress: number;
+  sessionEarned: number;
+  miningRate: number;
+  onStart: () => void;
+  onStop: () => void;
+}) {
+  const circumference =
+    2 * Math.PI * 76;
+
+  const dashOffset =
+    circumference -
+    (progress / 100) *
+      circumference;
+
+  return (
+    <div>
+      <div style={styles.sectionHeader}>
+        <div>
+          <div style={styles.eyebrow}>
+            MINING
+          </div>
+
+          <h2 style={styles.sectionTitle}>
+            Daily Mining
+          </h2>
+
+          <p style={styles.description}>
+            Mine Z-Points continuously
+            for 24 hours.
+          </p>
+        </div>
+
+        <div style={styles.rateBadge}>
+          ⚡ {miningRate} ZP/hour
+        </div>
+      </div>
+
+      <div style={styles.miningCard}>
+        <div style={styles.ringContainer}>
+          <svg
+            width="230"
+            height="230"
+            viewBox="0 0 172 172"
+          >
+            <circle
+              cx="86"
+              cy="86"
+              r="76"
+              fill="none"
+              stroke="rgba(255,255,255,.08)"
+              strokeWidth="8"
+            />
+
+            <circle
+              cx="86"
+              cy="86"
+              r="76"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="8"
+              strokeLinecap="round"
+              strokeDasharray={
+                circumference
+              }
+              strokeDashoffset={
+                dashOffset
+              }
+              transform="rotate(-90 86 86)"
+              style={
+                styles.ringProgress
+              }
+            />
+          </svg>
+
+          <div
+            style={
+              styles.ringCenter
+            }
+          >
+            <span>
+              {session
+                ? "MINING"
+                : "READY"}
+            </span>
+
+            <strong>
+              {session
+                ? formatTime(
+                    timeLeft
+                  )
+                : "24:00:00"}
+            </strong>
+          </div>
+        </div>
+
+        <div style={styles.miningInfo}>
+          <div>
+            <span>
+              Current Balance
+            </span>
+
+            <strong>
+              {formatNumber(
+                balance
+              )}{" "}
+              ZP
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              Current Session
+            </span>
+
+            <strong>
+              +{sessionEarned.toFixed(
+                2
+              )} ZP
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              Session Reward
+            </span>
+
+            <strong>
+              +240 ZP
+            </strong>
+          </div>
+
+          {!session ? (
+            <button
+              type="button"
+              style={
+                styles.primaryButton
+              }
+              onClick={onStart}
+            >
+              ⛏ Start 24H Mining
+            </button>
+          ) : (
+            <button
+              type="button"
+              style={
+                styles.dangerButton
+              }
+              onClick={onStop}
+            >
+              Stop Mining
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={styles.infoBox}>
+        <strong>
+          How mining works
+        </strong>
+
+        <p>
+          Start a 24-hour session and
+          earn Z-Points automatically.
+          You can close the website and
+          return later—the fixed session
+          timestamps keep the timer
+          accurate.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ==================================
+// Tasks Page
+// ==================================
+
+function TasksPage({
+  tasks,
+  onComplete,
+}: {
+  tasks: Task[];
+  onComplete: (
+    id: string
+  ) => void;
+}) {
+  const totalReward = tasks.reduce(
+    (sum, task) =>
+      sum +
+      (task.completed
+        ? task.reward
+        : 0),
+    0
+  );
+
+  return (
+    <div>
+      <div style={styles.sectionHeader}>
+        <div>
+          <div style={styles.eyebrow}>
+            EARN
+          </div>
+
+          <h2 style={styles.sectionTitle}>
+            Social Tasks
+          </h2>
+
+          <p style={styles.description}>
+            Complete tasks and earn
+            additional Z-Points.
+          </p>
+        </div>
+      </div>
+
+      <div style={styles.taskSummary}>
+        <span>
+          Earned from tasks
+        </span>
+
+        <strong>
+          +{totalReward} ZP
+        </strong>
+      </div>
+
+      <div style={styles.taskList}>
+        {tasks.map((task) => (
+          <div
+            key={task.id}
+            style={styles.taskCard}
+          >
+            <div style={styles.taskIcon}>
+              {task.completed
+                ? "✓"
+                : "✦"}
+            </div>
+
+            <div style={styles.taskContent}>
+              <strong>
+                {task.title}
+              </strong>
+
+              <span>
+                +{task.reward} ZP
+              </span>
+            </div>
+
+            <button
+              type="button"
+              disabled={
+                task.completed
+              }
+              style={{
+                ...styles.taskButton,
+                ...(task.completed
+                  ? styles.taskCompleted
+                  : {}),
+              }}
+              onClick={() =>
+                onComplete(
+                  task.id
+                )
+              }
+            >
+              {task.completed
+                ? "Completed"
+                : "Complete"}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div style={styles.demoWarning}>
+        <strong>
+          Demo mode
+        </strong>
+
+        <p>
+          These social tasks are
+          client-side demo tasks.
+          Real X/Twitter verification
+          must be done through a backend
+          and OAuth/API verification.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ==================================
+// Referral Page
+// ==================================
+
+function ReferralPage({
+  link,
+  code,
+  onCopy,
+}: {
+  link: string;
+  code: string;
+  onCopy: () => void;
+}) {
+  return (
+    <div>
+      <div style={styles.sectionHeader}>
+        <div>
+          <div style={styles.eyebrow}>
+            COMMUNITY
+          </div>
+
+          <h2 style={styles.sectionTitle}>
+            Invite & Earn
+          </h2>
+
+          <p style={styles.description}>
+            Invite friends and grow the
+            ZEPTO community.
+          </p>
+        </div>
+      </div>
+
+      <div style={styles.referralCard}>
+        <div style={styles.referralIcon}>
+          👥
+        </div>
+
+        <h3>
+          Your Referral Code
+        </h3>
+
+        <div style={styles.referralCode}>
+          {code}
+        </div>
+
+        <p style={styles.description}>
+          Share your referral link with
+          friends.
+        </p>
+
+        <div style={styles.referralLink}>
+          {link}
+        </div>
+
+        <button
+          type="button"
+          style={styles.primaryButton}
+          onClick={onCopy}
+        >
+          Copy Referral Link
+        </button>
+      </div>
+
+      <div style={styles.grid}>
+        <StatCard
+          title="Invited"
+          value="0"
+          description="Total friends"
+          icon="👤"
+        />
+
+        <StatCard
+          title="Active"
+          value="0"
+          description="Active referrals"
+          icon="⚡"
+        />
+
+        <StatCard
+          title="Bonus"
+          value="0 ZP"
+          description="Referral rewards"
+          icon="🎁"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ==================================
+// Wallet Page
+// ==================================
+
+function WalletPage({
+  wallet,
+  chainId,
+  onConnect,
+  onDisconnect,
+}: {
+  wallet: string;
+  chainId: string | null;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  const network =
+    getChainName(chainId);
+
+  return (
+    <div>
+      <div style={styles.sectionHeader}>
+        <div>
+          <div style={styles.eyebrow}>
+            WEB3
+          </div>
+
+          <h2 style={styles.sectionTitle}>
+            Wallet
+          </h2>
+
+          <p style={styles.description}>
+            Connect your EVM wallet to
+            your ZEPTO account.
+          </p>
+        </div>
+      </div>
+
+      {!wallet ? (
+        <div style={styles.walletCard}>
+          <div style={styles.walletLargeIcon}>
+            ◈
+          </div>
+
+          <h3>
+            Connect your wallet
+          </h3>
+
+          <p style={styles.description}>
+            MetaMask or another EVM
+            compatible wallet can be
+            connected.
+          </p>
+
+          <button
+            type="button"
+            style={styles.primaryButton}
+            onClick={onConnect}
+          >
+            Connect Wallet
+          </button>
+        </div>
+      ) : (
+        <div style={styles.walletCard}>
+          <div style={styles.connectedBadge}>
+            ● Connected
+          </div>
+
+          <h3>
+            {shortenAddress(wallet)}
+          </h3>
+
+          <div style={styles.walletDetails}>
+            <div>
+              <span>
+                Network
+              </span>
+
+              <strong>
+                {network}
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                Chain ID
+              </span>
+
+              <strong>
+                {chainId || "Unknown"}
+              </strong>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            style={
+              styles.secondaryButton
+            }
+            onClick={onDisconnect}
+          >
+            Disconnect
+          </button>
+        </div>
+      )}
+
+      <div style={styles.infoBox}>
+        <strong>
+          Important
+        </strong>
+
+        <p>
+          Connecting a wallet here does
+          not automatically create a
+          blockchain transaction. Real
+          token withdrawals require a
+          secure backend and smart
+          contract integration.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ==================================
+// Styles
+// ==================================
+
+const styles: Record<
+  string,
+  React.CSSProperties
+> = {
+  page: {
+    minHeight: "100vh",
+    background:
+      "radial-gradient(circle at top, #172554 0%, #07111f 38%, #030712 100%)",
+    color: "#f8fafc",
+    paddingBottom: 100,
+    fontFamily:
+      "Inter, Arial, sans-serif",
+    position: "relative",
+    overflowX: "hidden",
+  },
+
+  backgroundGlow: {
+    position: "fixed",
+    width: 500,
+    height: 500,
+    borderRadius: "50%",
+    background:
+      "rgba(59,130,246,.12)",
+    filter: "blur(100px)",
+    top: -250,
+    right: -200,
+    pointerEvents: "none",
+  },
+
+  header: {
+    height: 76,
+    display: "flex",
+    alignItems: "center",
+    justifyContent:
+      "space-between",
+    padding: "0 24px",
+    borderBottom:
+      "1px solid rgba(255,255,255,.08)",
+    background:
+      "rgba(3,7,18,.72)",
+    backdropFilter: "blur(20px)",
+    position: "sticky",
+    top: 0,
+    zIndex: 20,
+  },
+
+  logoRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  logo: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    display: "grid",
+    placeItems: "center",
+    fontSize: 22,
+    fontWeight: 900,
+    background:
+      "linear-gradient(135deg,#60a5fa,#8b5cf6)",
+    boxShadow:
+      "0 10px 30px rgba(59,130,246,.25)",
+  },
+
+  brand: {
+    fontWeight: 900,
+    letterSpacing: 1.5,
+    fontSize: 17,
+  },
+
+  brandSub: {
+    fontSize: 10,
+    color: "#94a3b8",
+    marginTop: 2,
+  },
+
+  walletTop: {
+    border:
+      "1px solid rgba(96,165,250,.3)",
+    background:
+      "rgba(59,130,246,.12)",
+    color: "#bfdbfe",
+    padding: "10px 14px",
+    borderRadius: 12,
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+
+  container: {
+    width: "min(1100px, calc(100% - 32px))",
+    margin: "0 auto",
+    paddingTop: 45,
+  },
+
+  hero: {
+    display: "grid",
+    gridTemplateColumns:
+      "1.3fr .7fr",
+    gap: 30,
+    alignItems: "center",
+  },
+
+  eyebrow: {
+    color: "#60a5fa",
+    fontSize: 12,
+    fontWeight: 800,
+    letterSpacing: 2,
+    marginBottom: 10,
+  },
+
+  title: {
+    fontSize:
+      "clamp(40px, 7vw, 72px)",
+    lineHeight: 1.02,
+    letterSpacing: -3,
+    margin: 0,
+    fontWeight: 900,
+  },
+
+  sectionTitle: {
+    fontSize: 38,
+    margin: 0,
+    letterSpacing: -1.5,
+  },
+
+  description: {
+    color: "#94a3b8",
+    lineHeight: 1.7,
+    maxWidth: 600,
+  },
+
+  heroButtons: {
+    display: "flex",
+    gap: 12,
+    marginTop: 25,
+    flexWrap: "wrap",
+  },
+
+  primaryButton: {
+    border: 0,
+    background:
+      "linear-gradient(135deg,#3b82f6,#6366f1)",
+    color: "white",
+    padding: "13px 20px",
+    borderRadius: 13,
+    fontWeight: 800,
+    cursor: "pointer",
+    boxShadow:
+      "0 10px 30px rgba(59,130,246,.2)",
+  },
+
+  secondaryButton: {
+    border:
+      "1px solid rgba(255,255,255,.12)",
+    background:
+      "rgba(255,255,255,.05)",
+    color: "white",
+    padding: "13px 20px",
+    borderRadius: 13,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  dangerButton: {
+    border: 0,
+    background:
+      "rgba(239,68,68,.15)",
+    color: "#fca5a5",
+    padding: "13px 20px",
+    borderRadius: 13,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+
+  balanceCard: {
+    padding: 28,
+    border:
+      "1px solid rgba(255,255,255,.1)",
+    borderRadius: 25,
+    background:
+      "linear-gradient(145deg,rgba(30,41,59,.85),rgba(15,23,42,.75))",
+    boxShadow:
+      "0 25px 70px rgba(0,0,0,.25)",
+  },
+
+  cardLabel: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: 800,
+    letterSpacing: 1.5,
+  },
+
+  balanceNumber: {
+    fontSize: 50,
+    fontWeight: 900,
+    letterSpacing: -2,
+    marginTop: 10,
+  },
+
+  balanceUnit: {
+    color: "#60a5fa",
+    fontWeight: 800,
+  },
+
+  miniStats: {
+    display: "grid",
+    gridTemplateColumns:
+      "1fr 1fr",
+    gap: 10,
+    marginTop: 25,
+  },
+
+  statCard: {
+    padding: 20,
+    border:
+      "1px solid rgba(255,255,255,.08)",
+    borderRadius: 18,
+    background:
+      "rgba(15,23,42,.65)",
+    display: "flex",
+    gap: 15,
+    alignItems: "center",
+  },
+
+  statIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 13,
+    background:
+      "rgba(59,130,246,.12)",
+    display: "grid",
+    placeItems: "center",
+    fontSize: 20,
+  },
+
+  statValue: {
+    fontSize: 23,
+    fontWeight: 900,
+    marginTop: 4,
+  },
+
+  statDescription: {
+    color: "#64748b",
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  grid: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(3,1fr)",
+    gap: 15,
+    marginTop: 25,
+  },
+
+  sectionHeader: {
+    display: "flex",
+    justifyContent:
+      "space-between",
+    alignItems: "flex-end",
+    marginBottom: 25,
+    gap: 20,
+  },
+
+  rateBadge: {
+    padding: "10px 14px",
+    borderRadius: 12,
+    background:
+      "rgba(34,197,94,.1)",
+    border:
+      "1px solid rgba(34,197,94,.2)",
+    color: "#86efac",
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+
+  miningCard: {
+    display: "grid",
+    gridTemplateColumns:
+      "1fr 1fr",
+    gap: 35,
+    alignItems: "center",
+    padding: 30,
+    border:
+      "1px solid rgba(255,255,255,.08)",
+    borderRadius: 25,
+    background:
+      "rgba(15,23,42,.75)",
+  },
+
+  ringContainer: {
+    position: "relative",
+    display: "grid",
+    placeItems: "center",
+  },
+
+  ringProgress: {
+    color: "#60a5fa",
+    filter:
+      "drop-shadow(0 0 8px rgba(96,165,250,.5))",
+  },
+
+  ringCenter: {
+    position: "absolute",
+    textAlign: "center",
+    display: "flex",
+    flexDirection: "column",
+    gap: 5,
+  },
+
+  miningInfo: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 18,
+  },
+
+  infoBox: {
+    marginTop: 20,
+    padding: 20,
+    borderRadius: 18,
+    background:
+      "rgba(59,130,246,.07)",
+    border:
+      "1px solid rgba(59,130,246,.14)",
+    color: "#cbd5e1",
+  },
+
+  taskSummary: {
+    display: "flex",
+    justifyContent:
+      "space-between",
+    padding: 18,
+    borderRadius: 16,
+    background:
+      "rgba(59,130,246,.08)",
+    marginBottom: 15,
+  },
+
+  taskList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+  },
+
+  taskCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: 15,
+    padding: 18,
+    borderRadius: 17,
+    background:
+      "rgba(15,23,42,.75)",
+    border:
+      "1px solid rgba(255,255,255,.08)",
+  },
+
+  taskIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 13,
+    display: "grid",
+    placeItems: "center",
+    background:
+      "rgba(96,165,250,.1)",
+    color: "#60a5fa",
+  },
+
+  taskContent: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    gap: 5,
+  },
+
+  taskButton: {
+    border: 0,
+    background:
+      "rgba(59,130,246,.15)",
+    color: "#93c5fd",
+    padding: "10px 14px",
+    borderRadius: 10,
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+
+  taskCompleted: {
+    background:
+      "rgba(34,197,94,.1)",
+    color: "#86efac",
+    cursor: "default",
+  },
+
+  demoWarning: {
+    marginTop: 20,
+    padding: 18,
+    borderRadius: 16,
+    background:
+      "rgba(234,179,8,.07)",
+    border:
+      "1px solid rgba(234,179,8,.15)",
+    color: "#fde68a",
+  },
+
+  referralCard: {
+    textAlign: "center",
+    padding: 40,
+    borderRadius: 25,
+    background:
+      "rgba(15,23,42,.75)",
+    border:
+      "1px solid rgba(255,255,255,.08)",
+  },
+
+  referralIcon: {
+    fontSize: 45,
+  },
+
+  referralCode: {
+    fontSize: 32,
+    fontWeight: 900,
+    margin: "15px 0",
+    letterSpacing: 3,
+  },
+
+  referralLink: {
+    maxWidth: 600,
+    margin: "15px auto",
+    padding: 14,
+    borderRadius: 12,
+    background:
+      "rgba(255,255,255,.05)",
+    color: "#94a3b8",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
+  walletCard: {
+    textAlign: "center",
+    padding: 40,
+    borderRadius: 25,
+    background:
+      "rgba(15,23,42,.75)",
+    border:
+      "1px solid rgba(255,255,255,.08)",
+  },
+
+  walletLargeIcon: {
+    fontSize: 55,
+    marginBottom: 15,
+  },
+
+  connectedBadge: {
+    display: "inline-block",
+    padding: "7px 12px",
+    borderRadius: 20,
+    background:
+      "rgba(34,197,94,.1)",
+    color: "#86efac",
+    fontSize: 12,
+    fontWeight: 800,
+    marginBottom: 15,
+  },
+
+  walletDetails: {
+    maxWidth: 450,
+    margin: "25px auto",
+    display: "grid",
+    gridTemplateColumns:
+      "1fr 1fr",
+    gap: 12,
+  },
+
+  bottomNav: {
+    position: "fixed",
+    left: 12,
+    right: 12,
+    bottom: 12,
+    zIndex: 50,
+    display: "flex",
+    justifyContent:
+      "center",
+    gap: 5,
+    padding: 8,
+    borderRadius: 20,
+    background:
+      "rgba(3,7,18,.88)",
+    backdropFilter: "blur(20px)",
+    border:
+      "1px solid rgba(255,255,255,.1)",
+    boxShadow:
+      "0 20px 60px rgba(0,0,0,.4)",
+  },
+
+  navButton: {
+    border: 0,
+    background: "transparent",
+    color: "#64748b",
+    padding: "9px 15px",
+    borderRadius: 13,
+    cursor: "pointer",
+    fontSize: 11,
+    fontWeight: 700,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 3,
+  },
+
+  navButtonActive: {
+    background:
+      "rgba(59,130,246,.13)",
+    color: "#93c5fd",
+  },
+
+  navIcon: {
+    fontSize: 18,
+  },
+
+  toast: {
+    position: "fixed",
+    left: "50%",
+    bottom: 90,
+    transform:
+      "translateX(-50%)",
+    zIndex: 100,
+    padding: "12px 18px",
+    borderRadius: 13,
+    background: "#0f172a",
+    border:
+      "1px solid rgba(255,255,255,.12)",
+    boxShadow:
+      "0 15px 40px rgba(0,0,0,.35)",
+    color: "white",
+    fontWeight: 700,
+    fontSize: 13,
+  },
+
+  loading: {
+    minHeight: "100vh",
+    display: "grid",
+    placeItems: "center",
+    alignContent: "center",
+    gap: 15,
+    background: "#030712",
+    color: "white",
+    fontFamily:
+      "Inter, Arial, sans-serif",
+  },
+
+  loadingLogo: {
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    display: "grid",
+    placeItems: "center",
+    fontSize: 28,
+    fontWeight: 900,
+    background:
+      "linear-gradient(135deg,#3b82f6,#6366f1)",
+  },
+};
