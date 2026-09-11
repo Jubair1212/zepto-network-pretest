@@ -10,6 +10,13 @@ const WEEK = [
   { d: "F", h: 8 }, { d: "S", h: 7 }, { d: "S", h: 9 },
 ];
 
+const INITIAL_TASKS = [
+  { id: "x_follow", title: "Follow @ZeptoApp on X", reward: 50, url: "https://x.com", completed: false },
+  { id: "x_like_retweet", title: "Like & Retweet Pinned Post", reward: 30, url: "https://x.com", completed: false },
+  { id: "x_comment", title: "Comment & Tag 3 Friends on X", reward: 40, url: "https://x.com", completed: false },
+  { id: "x_post_hashtag", title: "Post about Zepto with #ZeptoMining", reward: 100, url: "https://x.com", completed: false },
+];
+
 const SESSION_HISTORY = [
   { label: "Current session", earned: 8.33, status: "active" },
   { label: "Yesterday", earned: 240.0, status: "completed" },
@@ -52,6 +59,9 @@ const C = {
   purple: "#c084fc",
   purpleSoft: "rgba(192,132,252,0.12)",
   red: "#f87171",
+  redSoft: "rgba(248,113,113,0.12)",
+  blue: "#38bdf8",
+  blueSoft: "rgba(56,189,248,0.12)",
 };
 
 const S = {
@@ -97,6 +107,15 @@ const S = {
     border: `1px solid ${disabled ? C.border : "transparent"}`,
     borderRadius: 14, cursor: disabled ? "default" : "pointer",
   }),
+  quitBtn: {
+    marginTop: 10, width: "100%", padding: "12px",
+    background: C.redSoft,
+    color: C.red,
+    fontWeight: 600, fontSize: 14,
+    border: `1px solid ${C.red}`,
+    borderRadius: 14, cursor: "pointer",
+    transition: "0.2s ease",
+  } as React.CSSProperties,
   ringWrap: { position: "relative", width: 172, height: 172 } as React.CSSProperties,
   ringCenter: {
     position: "absolute", inset: 0, display: "flex", flexDirection: "column",
@@ -136,6 +155,16 @@ const S = {
     border: `1px solid ${C.border}`, borderRadius: 18, padding: "10px 12px",
     zIndex: 20,
   } as React.CSSProperties,
+  taskBtn: (completed: boolean): React.CSSProperties => ({
+    padding: "8px 14px",
+    background: completed ? C.greenSoft : C.amber,
+    color: completed ? C.green : "#0a0a0a",
+    border: `1px solid ${completed ? C.green : "transparent"}`,
+    borderRadius: 10,
+    fontWeight: 700,
+    fontSize: 12,
+    cursor: completed ? "default" : "pointer",
+  }),
 };
 
 function Ring({ progress, active, size = 172 }: { progress: number; active: boolean; size?: number }) {
@@ -171,9 +200,11 @@ const ICONS = {
   target: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z",
   gift: "M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7c-1.5 0-4.5-.5-4.5-3S11 1.5 12 7zM12 7c1.5 0 4.5-.5 4.5-3S13 1.5 12 7z",
   up: "M7 17 17 7M7 7h10v10",
+  tasks: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",
+  xLogo: "M4 4l11.733 16h4.267l-11.733 -16z M4 20l6.768 -6.768 M13.232 10.768l6.768 -6.768",
 };
 
-type Tab = "home" | "mine" | "referrals" | "wallet";
+type Tab = "home" | "mine" | "tasks" | "referrals" | "wallet";
 
 export default function Dashboard() {
   const [tab, setTab] = useState<Tab>("home");
@@ -181,6 +212,7 @@ export default function Dashboard() {
   const [isMining, setIsMining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [wallet, setWallet] = useState<string | null>(null);
+  const [tasks, setTasks] = useState(INITIAL_TASKS);
   const [toast, setToast] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -195,6 +227,9 @@ export default function Dashboard() {
     try {
       const savedWallet = localStorage.getItem("zepto_wallet");
       if (savedWallet) setWallet(savedWallet);
+
+      const savedTasks = localStorage.getItem("zepto_tasks");
+      if (savedTasks) setTasks(JSON.parse(savedTasks));
 
       const savedState = localStorage.getItem("zepto_state");
       if (savedState) {
@@ -232,7 +267,8 @@ export default function Dashboard() {
       "zepto_state",
       JSON.stringify({ balance: baseBalance, endAt })
     );
-  }, [isMining, timeLeft, balance, mounted]);
+    localStorage.setItem("zepto_tasks", JSON.stringify(tasks));
+  }, [isMining, timeLeft, balance, tasks, mounted]);
 
   /* Mining Timer Interval */
   useEffect(() => {
@@ -257,6 +293,25 @@ export default function Dashboard() {
     setTimeLeft(SESSION_SECONDS);
     showToast("Mining session started — 24h");
   }, [showToast]);
+
+  const stopSession = useCallback(() => {
+    setIsMining(false);
+    setTimeLeft(0);
+    showToast("Mining session stopped");
+  }, [showToast]);
+
+  const handleTaskClick = (task: typeof INITIAL_TASKS[0]) => {
+    if (task.completed) return;
+    window.open(task.url, "_blank");
+
+    setTimeout(() => {
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...t, completed: true } : t))
+      );
+      setBalance((b) => b + task.reward);
+      showToast(`+${task.reward} Z-Points earned from X Task!`);
+    }, 1500);
+  };
 
   const connectWallet = useCallback(async () => {
     if (typeof window !== "undefined" && (window as any).ethereum) {
@@ -292,6 +347,7 @@ export default function Dashboard() {
   const NAV: { id: Tab; icon: string; label: string }[] = [
     { id: "home", icon: ICONS.home, label: "Home" },
     { id: "mine", icon: ICONS.target, label: "Mine" },
+    { id: "tasks", icon: ICONS.tasks, label: "Tasks" },
     { id: "referrals", icon: ICONS.users, label: "Referrals" },
     { id: "wallet", icon: ICONS.wallet, label: "Wallet" },
   ];
@@ -336,13 +392,21 @@ export default function Dashboard() {
                     <span style={S.chip(C.text2, C.panel)}>+{sessionEarned.toFixed(4)} this session</span>
                   )}
                 </div>
-                <button
-                  style={S.primaryBtn(isMining)}
-                  disabled={isMining}
-                  onClick={startSession}
-                >
-                  {isMining ? "Mining session in progress" : "Start 24h mining session"}
-                </button>
+
+                {!isMining ? (
+                  <button style={S.primaryBtn(false)} onClick={startSession}>
+                    Start 24h mining session
+                  </button>
+                ) : (
+                  <>
+                    <button style={S.primaryBtn(true)} disabled={true}>
+                      Mining session in progress
+                    </button>
+                    <button style={S.quitBtn} onClick={stopSession}>
+                      Quit / Stop Mining
+                    </button>
+                  </>
+                )}
               </div>
               <div style={S.ringWrap}>
                 <Ring progress={progress} active={isMining} />
@@ -428,9 +492,21 @@ export default function Dashboard() {
                     </span>
                   )}
                 </div>
-                <button style={S.primaryBtn(isMining)} disabled={isMining} onClick={startSession}>
-                  {isMining ? "Mining session in progress" : "Start 24h mining session"}
-                </button>
+
+                {!isMining ? (
+                  <button style={S.primaryBtn(false)} onClick={startSession}>
+                    Start 24h mining session
+                  </button>
+                ) : (
+                  <>
+                    <button style={S.primaryBtn(true)} disabled={true}>
+                      Mining session in progress
+                    </button>
+                    <button style={S.quitBtn} onClick={stopSession}>
+                      Quit / Stop Mining
+                    </button>
+                  </>
+                )}
               </div>
               <div style={S.ringWrap}>
                 <Ring progress={progress} active={isMining} />
@@ -462,6 +538,45 @@ export default function Dashboard() {
                 ))}
               </div>
             </section>
+          </div>
+        )}
+
+        {tab === "tasks" && (
+          <div className="zpage">
+            <h2 style={S.pageTitle}>X Quests & Tasks</h2>
+            <p style={S.pageSub}>Complete X (Twitter) tasks to earn bonus Z-Points instantly</p>
+
+            <section style={{ ...S.card, marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={S.statIcon(C.blueSoft)}>
+                  <I d={ICONS.xLogo} color={C.blue} size={18} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700 }}>Social Bounties</div>
+                  <div style={{ fontSize: 12, color: C.text2 }}>Perform actions on X to earn extra Z-Points</div>
+                </div>
+              </div>
+            </section>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {tasks.map((task) => (
+                <div key={task.id} style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{task.title}</div>
+                    <div style={{ fontSize: 12, color: C.amber, fontWeight: 700, marginTop: 2 }}>
+                      +{task.reward} Z-Points
+                    </div>
+                  </div>
+                  <button
+                    style={S.taskBtn(task.completed)}
+                    onClick={() => handleTaskClick(task)}
+                    disabled={task.completed}
+                  >
+                    {task.completed ? "Completed" : "Start Task"}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
